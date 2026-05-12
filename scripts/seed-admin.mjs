@@ -1,4 +1,4 @@
-/**
+// Run: node --env-file=.env.local scripts/seed-admin.mjs
  * Seed script – creates the default admin user.
  * Run ONCE after setting DATABASE_URL in .env.local:
  *   node --env-file=.env.local scripts/seed-admin.mjs
