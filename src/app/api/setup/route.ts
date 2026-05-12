@@ -21,7 +21,7 @@ export async function GET(request: Request) {
 
   const run = async (step: string, query: string) => {
     try {
-      await sql(query);
+      await sql.query(query);
       results.push({ step, status: "✓" });
     } catch (err: unknown) {
       results.push({ step, status: "✗", error: err instanceof Error ? err.message : String(err) });
