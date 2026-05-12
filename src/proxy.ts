@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 export default auth((req) => {
   const { pathname } = req.nextUrl;
 
-  const publicPaths = ["/login", "/api/auth"];
+  const publicPaths = ["/login", "/api/auth", "/api/setup"];
   if (publicPaths.some((p) => pathname.startsWith(p))) return;
 
   if (!req.auth) {

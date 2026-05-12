@@ -1,11 +1,5 @@
 {
   "framework": "nextjs",
   "buildCommand": "npm run build",
-  "installCommand": "npm install",
-  "env": {
-    "DATABASE_URL": "@database-url",
-    "AUTH_SECRET": "@auth-secret",
-    "ADMIN_SECRET_KEY": "@admin-secret-key",
-    "NEXT_PUBLIC_GAS_WEB_APP_URL": "@gas-web-app-url"
-  }
+  "installCommand": "npm install"
 }
