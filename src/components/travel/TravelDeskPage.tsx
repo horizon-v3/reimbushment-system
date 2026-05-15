@@ -37,9 +37,11 @@ const EMPTY_FORM = {
   notes: "", invoice_amount: "", invoice_amount_usd: "",
   ticket_received: "No", invoice_received: "No", visa_received: "No",
   passport_copy_received: "No", voucher_received: "No",
+  reimbursement_amount: "", bl: "",
+  passport_url: "", business_card_url: "",
 };
-type FormState = typeof EMPTY_FORM;
-type FileMap = { ticket?: File; invoice?: File; visa?: File; passport?: File; voucher?: File };
+type FormState = typeof EMPTY_FORM & { reimbursement_amount_verified?: boolean };
+type FileMap = { ticket?: File; invoice?: File; visa?: File; passport?: File; voucher?: File; business_card?: File };
 
 export default function TravelDeskPage({ isAdmin = false }: { isAdmin?: boolean }) {
   const { data: regsData } = useSWR<{ rows: RegistrationRow[] }>("/api/registrations?limit=5000", fetcher);
@@ -70,6 +72,9 @@ export default function TravelDeskPage({ isAdmin = false }: { isAdmin?: boolean 
       country_code: extractCountryCode(r.participant_mobile),
       sector: r.main_import_product_1 ?? "",
       company_name: r.company_name ?? "", poc: r.poc ?? "",
+      bl: r.bl_status ?? r.proof_upload ?? "",
+      passport_url: r.drive_passport_front_url ?? r.passport_front_copy ?? "",
+      business_card_url: r.drive_business_card_url ?? r.business_card_upload ?? "",
     }));
   }, [regs]);
 
@@ -83,12 +88,23 @@ export default function TravelDeskPage({ isAdmin = false }: { isAdmin?: boolean 
 
   const save = async () => {
     if (!form.first_name?.trim()) return toast.error("Select a delegate first");
+    
+    let isVerified = form.reimbursement_amount_verified;
+    if (form.reimbursement_amount && !isVerified) {
+      const p = window.prompt(`Please type "ok" to confirm the reimbursement amount of ${form.reimbursement_amount}`);
+      if (p?.trim().toLowerCase() === "ok") {
+        isVerified = true;
+      } else {
+        return toast.error("Reimbursement amount not confirmed. Please type 'ok' to verify.");
+      }
+    }
+    
     setSaving(true);
     try {
       const urlMap: Record<string, string> = {};
       const fileEntries: [keyof FileMap, string][] = [
         ["ticket", "ticket"], ["invoice", "invoice"], ["visa", "visa"],
-        ["passport", "passport"], ["voucher", "voucher"],
+        ["passport", "passport"], ["voucher", "voucher"], ["business_card", "business_card"],
       ];
       for (const [key, docType] of fileEntries) {
         if (files[key]) {
@@ -135,6 +151,11 @@ export default function TravelDeskPage({ isAdmin = false }: { isAdmin?: boolean 
       ticket_received: r.ticket_received ?? "No", invoice_received: r.invoice_received ?? "No",
       visa_received: r.visa_received ?? "No", passport_copy_received: r.passport_copy_received ?? "No",
       voucher_received: r.voucher_received ?? "No",
+      reimbursement_amount: r.reimbursement_amount ?? "",
+      bl: r.bl ?? "",
+      passport_url: r.passport_url ?? "",
+      business_card_url: r.business_card_url ?? "",
+      reimbursement_amount_verified: false,
     });
     setFiles({});
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -230,11 +251,11 @@ export default function TravelDeskPage({ isAdmin = false }: { isAdmin?: boolean 
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           <DelegateSearch regs={regs} value={form.registration_id} onSelect={onSelectDelegate} />
-          {(["responses_sr_no","initial","first_name","last_name","country_name","participant_mobile","country_code","company_name","sector","poc","room_no","hotel_name","arrival_flight_no","arrival_to","departure_flight_no","departure_from","invoice_amount","invoice_amount_usd"] as (keyof FormState)[]).map(k => (
+          {(["responses_sr_no","initial","first_name","last_name","country_name","participant_mobile","country_code","company_name","sector","bl","poc","room_no","hotel_name","arrival_flight_no","arrival_to","departure_flight_no","departure_from","invoice_amount","invoice_amount_usd"] as (keyof FormState)[]).map(k => (
             <FLD key={k} label={k.replace(/_/g," ").replace(/\b\w/g,m=>m.toUpperCase())}>
               <input className="input" value={form[k] as string}
-                readOnly={["responses_sr_no","initial","first_name","last_name","country_name","participant_mobile","company_name","sector","poc"].includes(k)}
-                onChange={e => set(k, e.target.value)} />
+                readOnly={["responses_sr_no","initial","first_name","last_name","country_name","participant_mobile","company_name","sector","bl","poc"].includes(k)}
+                onChange={e => set(k, e.target.value as FormState[typeof k])} />
             </FLD>
           ))}
           {(["check_in_date","check_out_date","arrival_date","departure_date"] as (keyof FormState)[]).map(k => (
@@ -249,15 +270,35 @@ export default function TravelDeskPage({ isAdmin = false }: { isAdmin?: boolean 
           ))}
           <SEL label="Occupancy" value={form.room_units as string} onChange={v => set("room_units", v)} opts={["1","0.5"]} />
           <SEL label="Status" value={form.status as string} onChange={v => set("status", v)} opts={["Confirmed","Can't Verify","Pending","Cancelled"]} />
-          <SEL label="Reimbursement" value={form.reimbursement as string} onChange={v => set("reimbursement", v)} opts={["Yes","No"]} />
+          <SEL label="Reimbursement to be done or not" value={form.reimbursement as string} onChange={v => set("reimbursement", v)} opts={["Yes","No"]} />
+          <FLD label="Reimbursement Amount Given">
+            <input className="input" value={form.reimbursement_amount as string} onChange={e => set("reimbursement_amount", e.target.value)} placeholder="Enter amount" />
+            <div className="flex items-center gap-2 mt-2">
+              <button 
+                className="btn-secondary py-1 text-xs"
+                onClick={() => {
+                  if(!form.reimbursement_amount) return toast.error("Enter amount first");
+                  const p = window.prompt(`Type "ok" to confirm amount: ${form.reimbursement_amount}`);
+                  if(p?.trim().toLowerCase() === "ok") set("reimbursement_amount_verified", true);
+                }}
+              >
+                Verify Amount (Pop-up)
+              </button>
+              {form.reimbursement_amount_verified && <span className="text-xs text-[var(--color-success)] font-bold flex items-center gap-1"><CheckCircle size={12}/> Verified</span>}
+            </div>
+          </FLD>
           <SEL label="Ticket Received" value={form.ticket_received as string} onChange={v => set("ticket_received", v)} opts={["Yes","No"]} />
           <SEL label="Invoice Received" value={form.invoice_received as string} onChange={v => set("invoice_received", v)} opts={["Yes","No"]} />
           <SEL label="Visa Received" value={form.visa_received as string} onChange={v => set("visa_received", v)} opts={["Yes","No"]} />
           <SEL label="Passport Copy" value={form.passport_copy_received as string} onChange={v => set("passport_copy_received", v)} opts={["Yes","No"]} />
           <SEL label="Voucher Received" value={form.voucher_received as string} onChange={v => set("voucher_received", v)} opts={["Yes","No"]} />
-          {(["ticket","invoice","visa","passport","voucher"] as (keyof FileMap)[]).map(k => (
-            <FLD key={k} label={`${k.charAt(0).toUpperCase()+k.slice(1)} File (Drive Upload)`}>
-              <input type="file" className="input" style={{ padding: "0.375rem" }} onChange={e => setFiles(f => ({ ...f, [k]: e.target.files?.[0] }))} />
+          {(["ticket","invoice","visa","passport","voucher","business_card"] as (keyof FileMap)[]).map(k => (
+            <FLD key={k} label={`${k.replace("_"," ").replace(/\b\w/g,m=>m.toUpperCase())} File (Drive Upload)`}>
+              <div className="flex flex-col gap-1">
+                <input type="file" className="input" style={{ padding: "0.375rem" }} onChange={e => setFiles(f => ({ ...f, [k]: e.target.files?.[0] }))} />
+                {(k === "passport" && form.passport_url) && <a href={form.passport_url as string} target="_blank" rel="noreferrer" className="text-xs text-[var(--color-accent)] hover:underline mt-1 flex items-center gap-1"><Link size={12}/> View existing passport</a>}
+                {(k === "business_card" && form.business_card_url) && <a href={form.business_card_url as string} target="_blank" rel="noreferrer" className="text-xs text-[var(--color-accent)] hover:underline mt-1 flex items-center gap-1"><Link size={12}/> View existing business card</a>}
+              </div>
             </FLD>
           ))}
           <div className="col-span-full">
@@ -592,7 +633,7 @@ function DelegateSearch({
             top: dropPos.top,
             left: dropPos.left,
             width: dropPos.width,
-            background: "var(--color-card, #1e1e2e)",
+            background: "var(--color-bg-secondary)",
             border: "1px solid var(--color-border)",
             borderRadius: 10,
             zIndex: 99999,
@@ -618,14 +659,14 @@ function DelegateSearch({
                       padding: "0.5rem 0.875rem",
                       cursor: "pointer",
                       fontSize: "0.8125rem",
-                      background: isActive ? "var(--color-accent-light, #3b3b6e)" : "transparent",
+                      background: isActive ? "var(--color-accent-light)" : "transparent",
                       borderBottom: "1px solid var(--color-border)",
                       display: "flex",
                       gap: "0.625rem",
                       alignItems: "center",
                     }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "var(--color-hover, #2a2a3e)"; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = isActive ? "var(--color-accent-light, #3b3b6e)" : "transparent"; }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "var(--color-bg-primary)"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = isActive ? "var(--color-accent-light)" : "transparent"; }}
                   >
                     <span style={{ fontWeight: 700, color: "var(--color-accent)", minWidth: 32, flexShrink: 0, fontSize: "0.8125rem" }}>
                       {r.sr_no ?? "—"}

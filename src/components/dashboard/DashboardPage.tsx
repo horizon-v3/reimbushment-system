@@ -501,7 +501,7 @@ function RegistrationsTable({
           <table className="data-table">
             <thead>
               <tr>
-                {["Sr No", "Name", "Country", "Company", "Sector", "POC", "F/H", "Verified", ...(isAdmin ? [""] : [])].map((h) => (
+                {["Sr No", "Name", "Country", "Company", "Primary Sector", "Secondary Sector", "POC", "F/H", "Verified", ...(isAdmin ? [""] : [])].map((h) => (
                   <th key={h}>{h}</th>
                 ))}
               </tr>
@@ -525,6 +525,7 @@ function RegistrationsTable({
                     <td>{r.country_name ?? r.passport_country ?? ""}</td>
                     <td className="max-w-[180px] truncate" title={r.company_name ?? undefined}>{r.company_name}</td>
                     <td className="max-w-[140px] truncate" title={r.main_import_product_1 ?? undefined}>{r.main_import_product_1}</td>
+                    <td className="max-w-[140px] truncate" title={r.main_import_product_2 ?? undefined}>{r.main_import_product_2}</td>
                     <td className="font-medium">{r.poc}</td>
                     <td><span className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] px-2 py-1 rounded text-xs font-mono">{r.flight_hotel_code || "-"}</span></td>
                     <td>

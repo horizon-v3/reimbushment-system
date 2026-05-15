@@ -81,16 +81,20 @@ export type TravelRow = {
   visa_received: string | null;
   passport_copy_received: string | null;
   voucher_received: string | null;
+  reimbursement_amount: string | null;
+  bl: string | null;
   ticket_url: string | null;
   invoice_url: string | null;
   visa_url: string | null;
   passport_url: string | null;
   voucher_url: string | null;
+  business_card_url: string | null;
   ticket_drive_id: string | null;
   invoice_drive_id: string | null;
   visa_drive_id: string | null;
   passport_drive_id: string | null;
   voucher_drive_id: string | null;
+  business_card_drive_id: string | null;
   created_at: string;
   updated_at: string;
   [k: string]: unknown;
@@ -215,11 +219,27 @@ export function extractCountryCode(mobile: string | null | undefined): string {
   return m ? "+" + m[1] : "";
 }
 
+export function parseAnyDate(dStr: string | null | undefined): Date | null {
+  if (!dStr) return null;
+  const d = new Date(dStr);
+  if (!isNaN(d.getTime())) return d;
+  // Try DD/MM/YYYY
+  const parts = dStr.split(/[\/\-\s:]+/);
+  if (parts.length >= 3) {
+    // If first part is > 12, it's definitely DD/MM/YYYY
+    // Just blindly try DD/MM/YYYY as fallback
+    const [dd, mm, yyyy] = parts.map(Number);
+    const d2 = new Date(yyyy, mm - 1, dd);
+    if (!isNaN(d2.getTime())) return d2;
+  }
+  return null;
+}
+
 export function generateGroupMessage(rows: RegistrationRow[], date: Date): string {
   const today = rows.filter((r) => {
-    const t = r.timestamp_raw ?? r.created_at;
+    const t = parseAnyDate(r.timestamp_raw ?? r.created_at);
     if (!t) return false;
-    return sameYMD(new Date(t), date);
+    return sameYMD(t, date);
   });
   const k = computeKpis(rows);
   const byCountry = pivotCount(today, (r) => r.country_name ?? r.passport_country);
@@ -244,9 +264,9 @@ export function generateCountryGroupMessages(
   date: Date,
 ): { country: string; count: number; message: string }[] {
   const today = rows.filter((r) => {
-    const t = r.timestamp_raw ?? r.created_at;
+    const t = parseAnyDate(r.timestamp_raw ?? r.created_at);
     if (!t) return false;
-    return sameYMD(new Date(t), date);
+    return sameYMD(t, date);
   });
   const byCountry = new Map<string, RegistrationRow[]>();
   for (const r of today) {

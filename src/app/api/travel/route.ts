@@ -39,7 +39,7 @@ export async function GET(request: Request) {
     const toSnake = (obj: Record<string, unknown>) =>
       Object.fromEntries(
         Object.entries(obj).map(([k, v]) => [
-          k.replace(/([A-Z])/g, "_$1").toLowerCase(),
+          k.replace(/([A-Z]|\d+)/g, "_$1").toLowerCase(),
           v,
         ])
       );
@@ -205,6 +205,8 @@ function mapTravelRecord(r: Record<string, unknown>) {
     poc: s("poc"),
     status: s("status") ?? "Pending",
     reimbursement: s("reimbursement") ?? "No",
+    reimbursementAmount: s("reimbursement_amount"),
+    bl: s("bl"),
     notes: s("notes"),
     invoiceAmount: s("invoice_amount"),
     invoiceAmountUsd: s("invoice_amount_usd"),
@@ -218,11 +220,13 @@ function mapTravelRecord(r: Record<string, unknown>) {
     visaUrl: s("visa_url"),
     passportUrl: s("passport_url"),
     voucherUrl: s("voucher_url"),
+    businessCardUrl: s("business_card_url"),
     ticketDriveId: s("ticket_drive_id"),
     invoiceDriveId: s("invoice_drive_id"),
     visaDriveId: s("visa_drive_id"),
     passportDriveId: s("passport_drive_id"),
     voucherDriveId: s("voucher_drive_id"),
+    businessCardDriveId: s("business_card_drive_id"),
   };
 }
 
@@ -250,5 +254,5 @@ async function triggerTravelGasBackup(
 }
 
 function toSnake(str: string): string {
-  return str.replace(/([A-Z])/g, (m) => "_" + m.toLowerCase());
+  return str.replace(/([A-Z]|\d+)/g, (m) => "_" + m.toLowerCase());
 }

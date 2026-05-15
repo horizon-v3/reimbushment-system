@@ -159,6 +159,17 @@ function mapSheetRow(r: Record<string, unknown>) {
     const num = Number(v); return isNaN(num) ? null : num;
   };
 
+  // Robust product matching
+  let p1: string | null = null, p2: string | null = null;
+  for (const [k, v] of Object.entries(r)) {
+    const lk = k.toLowerCase().trim();
+    if (lk.includes("import") && lk.includes("product")) {
+      const val = v != null && String(v).trim() ? String(v).replace(/[\r\n]+/g, " ").trim() : null;
+      if (lk.includes("2")) { if (!p2) p2 = val; }
+      else                  { if (!p1) p1 = val; }
+    }
+  }
+
   return {
     srNo:                  n(["Sr No", "sr_no", "SR NO", "Sr. No"]),
     timestampRaw:          s(["Timestamp", "timestamp_raw"]),
@@ -179,8 +190,8 @@ function mapSheetRow(r: Record<string, unknown>) {
     passportFrontCopy:     s(["Passport Front Copy", "passport_front_copy"]),
     passportBackCopy:      s(["Passport Back Copy", "passport_back_copy"]),
     natureOfBusiness:      s(["Nature of Business", "nature_of_business"]),
-    mainImportProduct1:    s(["Your Main Import Product - 1", "main_import_product_1"]),
-    mainImportProduct2:    s(["Your Main Import Product - 2", "main_import_product_2"]),
+    mainImportProduct1:    p1 || s(["Your Main Import Product - 1", "main_import_product_1"]),
+    mainImportProduct2:    p2 || s(["Your Main Import Product - 2", "main_import_product_2"]),
     proofUpload:           s(["Upload one proof of your Import (Please enter valid document Eg: - Bill of Lading)", "proof_upload"]),
     productsServices:      s(["Which of the below describes your products/services", "products_services"]),
     businessCardUpload:    s(["Please upload your Business Card", "business_card_upload"]),

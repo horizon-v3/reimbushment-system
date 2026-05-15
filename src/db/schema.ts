@@ -113,18 +113,22 @@ export const travelRecords = pgTable("travel_records", {
   visaReceived: text("visa_received").default("No"),
   passportCopyReceived: text("passport_copy_received").default("No"),
   voucherReceived: text("voucher_received").default("No"),
+  reimbursementAmount: text("reimbursement_amount"),
+  bl: text("bl"),
   // Google Drive URLs
   ticketUrl: text("ticket_url"),
   invoiceUrl: text("invoice_url"),
   visaUrl: text("visa_url"),
   passportUrl: text("passport_url"),
   voucherUrl: text("voucher_url"),
+  businessCardUrl: text("business_card_url"),
   // Drive file IDs for management
   ticketDriveId: text("ticket_drive_id"),
   invoiceDriveId: text("invoice_drive_id"),
   visaDriveId: text("visa_drive_id"),
   passportDriveId: text("passport_drive_id"),
   voucherDriveId: text("voucher_drive_id"),
+  businessCardDriveId: text("business_card_drive_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

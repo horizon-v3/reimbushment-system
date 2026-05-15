@@ -134,7 +134,7 @@ export async function GET(request: Request) {
     const toSnake = (obj: Record<string, unknown>) =>
       Object.fromEntries(
         Object.entries(obj).map(([k, v]) => [
-          k.replace(/([A-Z])/g, "_$1").toLowerCase(),
+          k.replace(/([A-Z]|\d+)/g, "_$1").toLowerCase(),
           v,
         ])
       );
