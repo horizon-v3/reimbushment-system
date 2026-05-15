@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { eq } from "drizzle-orm";
 import { hash } from "bcryptjs";
 
 // POST /api/admin/seed-user - creates initial admin user

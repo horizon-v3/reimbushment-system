@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { neon } from "@neondatabase/serverless";
+import postgres from "postgres";
 import { hashSync } from "bcryptjs";
 
 // GET /api/setup — one-time DB init + admin seed
@@ -12,16 +12,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Forbidden. Pass ?key=YOUR_ADMIN_SECRET_KEY" }, { status: 403 });
   }
 
-  if (!process.env.DATABASE_URL) {
+  const dbUrl = process.env.DATABASE_URL || "postgres://postgres.hbjrrfvuhjfexhvjpcun:5zanRUNJuQHUEJAX@aws-1-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require&supa=base-pooler.x";
+
+  if (!dbUrl) {
     return NextResponse.json({ error: "DATABASE_URL not configured" }, { status: 500 });
   }
 
-  const sql = neon(process.env.DATABASE_URL);
+  const sql = postgres(dbUrl, { prepare: false });
   const results: { step: string; status: string; error?: string }[] = [];
 
   const run = async (step: string, query: string) => {
     try {
-      await sql.query(query);
+      await sql.unsafe(query);
       results.push({ step, status: "✓" });
     } catch (err: unknown) {
       results.push({ step, status: "✗", error: err instanceof Error ? err.message : String(err) });

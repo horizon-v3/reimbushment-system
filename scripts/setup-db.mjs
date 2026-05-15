@@ -1,12 +1,12 @@
-import { neon } from "@neondatabase/serverless";
+import postgres from "postgres";
 import { hashSync } from "bcryptjs";
 
 const DB_URL = "postgresql://neondb_owner:npg_UQGjF5nzNs7M@ep-damp-cell-aqxu50ke-pooler.c-8.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require";
 
-const sql = neon(DB_URL);
+const sql = postgres(DB_URL, { prepare: false });
 
 async function run() {
-  console.log("\n🔄  Connecting to Neon...\n");
+  console.log("\n🔄  Connecting to Database...\n");
 
   const queries = [
     {
@@ -150,7 +150,7 @@ async function run() {
   let ok = 0, fail = 0;
   for (const q of queries) {
     try {
-      await sql.query(q.sql);
+      await sql.unsafe(q.sql);
       console.log(`  ✓  ${q.name}`);
       ok++;
     } catch (err) {
@@ -162,13 +162,12 @@ async function run() {
   // Seed admin user with bcrypt hash
   try {
     const passwordHash = hashSync("manthan18", 12);
-    await sql.query(
-      `INSERT INTO users (email, password_hash, name, role)
-       VALUES ($1, $2, $3, $4)
+    await sql`
+       INSERT INTO users (email, password_hash, name, role)
+       VALUES (${"admin"}, ${passwordHash}, ${"Admin"}, ${"admin"})
        ON CONFLICT (email) DO UPDATE
-         SET password_hash = EXCLUDED.password_hash, role = EXCLUDED.role, name = EXCLUDED.name`,
-      ["admin", passwordHash, "Admin", "admin"]
-    );
+         SET password_hash = EXCLUDED.password_hash, role = EXCLUDED.role, name = EXCLUDED.name
+    `;
     console.log("  ✓  admin user seeded (admin / manthan18)");
     ok++;
   } catch (err) {

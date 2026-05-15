@@ -15,26 +15,35 @@ export type RegistrationRow = {
   company_website: string | null;
   designation: string | null;
   passport_number: string | null;
+  place_of_issue: string | null;
+  date_of_expiry: string | null;
+  passport_front_copy: string | null;
+  passport_back_copy: string | null;
+  nature_of_business: string | null;
   main_import_product_1: string | null;
   main_import_product_2: string | null;
+  proof_upload: string | null;
   products_services: string | null;
+  business_card_upload: string | null;
   poc: string | null;
   proof_import: string | null;
   type_of_poi: string | null;
+  bl_supplier_country: string | null;
+  bl_buyer_country: string | null;
   status: string | null;
   flight_hotel_code: string | null;
   remarks: string | null;
   bl_status: string | null;
   bb_invitation_status: string | null;
-  dollar_business: string | null;
-  vujis: string | null;
   drive_passport_front_url: string | null;
   drive_passport_back_url: string | null;
   drive_proof_url: string | null;
+  drive_business_card_url: string | null;
   created_at: string;
   updated_at: string;
   [k: string]: unknown;
 };
+
 
 export type TravelRow = {
   id: number;
@@ -170,7 +179,11 @@ export function computeKpis(rows: RegistrationRow[]) {
 export function pivotCount<T>(rows: T[], keyFn: (r: T) => string | null | undefined): { label: string; count: number }[] {
   const map = new Map<string, number>();
   for (const r of rows) {
-    const k = (keyFn(r) ?? "").trim() || "(blank)";
+    const raw = keyFn(r);
+    if (raw == null) continue;
+    // Strip ALL whitespace variants including \r\n from TSV parsing
+    const k = String(raw).replace(/[\r\n\t]+/g, " ").trim();
+    if (!k) continue;
     map.set(k, (map.get(k) ?? 0) + 1);
   }
   return Array.from(map.entries()).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count);
@@ -256,24 +269,14 @@ export function generateCountryGroupMessages(
     });
 }
 
+import Papa from "papaparse";
+
 export function parseCsv(text: string): { headers: string[]; rows: Record<string, string>[] } {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  if (lines.length === 0) return { headers: [], rows: [] };
-  const parseRow = (line: string): string[] => {
-    const out: string[] = []; let cur = ""; let inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (c === '"') { if (inQ && line[i + 1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
-      else if (c === "," && !inQ) { out.push(cur); cur = ""; }
-      else cur += c;
-    }
-    out.push(cur); return out;
-  };
-  const headers = parseRow(lines[0]).map((h) =>
-    h.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^\w]/g, "_")
-  );
-  const rows = lines.slice(1).map((l) => {
-    const cells = parseRow(l);
+  const parsed = Papa.parse<string[]>(text.trim(), { skipEmptyLines: true });
+  if (!parsed.data.length) return { headers: [], rows: [] };
+  const rawHeaders = parsed.data[0];
+  const headers = rawHeaders.map((h) => h.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^\w]/g, "_"));
+  const rows = parsed.data.slice(1).map((cells) => {
     const o: Record<string, string> = {};
     headers.forEach((h, i) => { o[h] = (cells[i] ?? "").trim(); });
     return o;

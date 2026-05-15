@@ -1,10 +1,11 @@
-// Run: node --env-file=.env.local scripts/seed-admin.mjs
+/*
+ * Run: node --env-file=.env.local scripts/seed-admin.mjs
  * Seed script – creates the default admin user.
  * Run ONCE after setting DATABASE_URL in .env.local:
  *   node --env-file=.env.local scripts/seed-admin.mjs
  */
-import { neon } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-http";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
 import { hashSync } from "bcryptjs";
 import { pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 
@@ -14,8 +15,8 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 
-const sql = neon(DATABASE_URL);
-const db = drizzle(sql);
+const client = postgres(DATABASE_URL, { prepare: false });
+const db = drizzle(client);
 
 // Inline minimal schema to avoid TS imports
 const users = pgTable("users", {

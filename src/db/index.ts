@@ -1,24 +1,30 @@
-import { neon } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-http";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "./schema";
 
-type DB = ReturnType<typeof drizzle<typeof schema>>;
+const globalForDb = globalThis as unknown as {
+  _db_instance: ReturnType<typeof drizzle<typeof schema>>;
+  _db_schema_keys: string;
+};
 
-// Lazy singleton — only connects when first DB query is made (not at build time)
-let _instance: DB | null = null;
+// Next.js hot module reloading can keep old schemas if we don't invalidate it.
+const currentSchemaKeys = Object.keys(schema).join(",");
 
-function getInstance(): DB {
-  if (!_instance) {
-    const url = process.env.DATABASE_URL;
-    if (!url) throw new Error("DATABASE_URL environment variable is not set");
-    _instance = drizzle(neon(url), { schema });
+function getInstance() {
+  const url = process.env.DATABASE_URL || "postgres://postgres.hbjrrfvuhjfexhvjpcun:5zanRUNJuQHUEJAX@aws-1-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require&supa=base-pooler.x";
+  if (!url) throw new Error("DATABASE_URL environment variable is not set");
+
+  // Re-create if schema changed (to fix HMR keeping old schema definitions)
+  if (!globalForDb._db_instance || globalForDb._db_schema_keys !== currentSchemaKeys) {
+    const client = postgres(url, { prepare: false });
+    globalForDb._db_instance = drizzle(client, { schema });
+    globalForDb._db_schema_keys = currentSchemaKeys;
   }
-  return _instance;
+  return globalForDb._db_instance;
 }
 
-// Proxy so all existing `import { db }` calls work unchanged
-export const db = new Proxy({} as DB, {
+export const db = new Proxy({} as ReturnType<typeof drizzle<typeof schema>>, {
   get(_, prop: string | symbol) {
-    return getInstance()[prop as keyof DB];
+    return getInstance()[prop as keyof ReturnType<typeof drizzle<typeof schema>>];
   },
 });

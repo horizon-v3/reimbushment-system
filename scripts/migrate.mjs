@@ -2,7 +2,7 @@
  * Direct SQL migration script - no interactive prompts needed.
  * Run: node --env-file=.env.local scripts/migrate.mjs
  */
-import { neon } from "@neondatabase/serverless";
+import postgres from "postgres";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
@@ -10,7 +10,7 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 
-const sql = neon(DATABASE_URL);
+const sql = postgres(DATABASE_URL, { prepare: false });
 
 console.log("🔄  Creating tables...\n");
 
@@ -150,7 +150,7 @@ let success = 0;
 for (const query of migrations) {
   const name = query.trim().split("\n")[0].slice(0, 60) + "...";
   try {
-    await sql(query);
+    await sql.unsafe(query);
     console.log(`  ✓  ${name}`);
     success++;
   } catch (err) {

@@ -3,9 +3,37 @@ import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
 import {
   Save, RefreshCw, ExternalLink, CheckCircle2, AlertCircle,
-  Plus, Shield, Pencil, Trash2, Eye, EyeOff, X, ChevronDown,
+  Plus, Shield, Pencil, Trash2, Eye, EyeOff, X, ChevronDown, Zap, Link2,
 } from "lucide-react";
 import { pingGas } from "@/lib/gas-client";
+
+// ─── URL → ID extractors ─────────────────────────────────────────────────────
+function extractSheetId(raw: string): string {
+  // Full URL: https://docs.google.com/spreadsheets/d/ID/edit...
+  const m = raw.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) return m[1];
+  // Already an ID (no slashes)
+  if (/^[a-zA-Z0-9_-]{10,}$/.test(raw.trim())) return raw.trim();
+  return raw.trim();
+}
+
+function extractFolderId(raw: string): string {
+  // Full URL: https://drive.google.com/drive/folders/ID
+  const m = raw.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (m) return m[1];
+  // Shared file URL: /file/d/ID
+  const m2 = raw.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (m2) return m2[1];
+  // Already an ID
+  if (/^[a-zA-Z0-9_-]{10,}$/.test(raw.trim())) return raw.trim();
+  return raw.trim();
+}
+
+function extractGasUrl(raw: string): string {
+  // Already a valid exec URL
+  if (raw.includes("script.google.com") && raw.includes("/exec")) return raw.trim();
+  return raw.trim();
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type AppSettings = {
@@ -29,28 +57,25 @@ type EditUserForm = { id: number; name: string; role: string; password: string }
 
 // ─── Constants (outside component) ───────────────────────────────────────────
 const ROLES = [
-  { value: "admin",    label: "Admin",     desc: "Full access + user management" },
-  { value: "manager",  label: "Manager",   desc: "All data, no user management"  },
-  { value: "staff",    label: "Staff",     desc: "CRM + Travel Desk"             },
-  { value: "readonly", label: "Read Only", desc: "View only"                     },
+  { value: "admin",      label: "Admin",      desc: "Full access + user management" },
+  { value: "supervisor", label: "Supervisor", desc: "Reports + CRM + Travel Desk"   },
+  { value: "user",       label: "User",       desc: "Data Entry & Chat only"        },
 ];
 
 const ROLE_COLOR: Record<string, string> = {
-  admin: "#ff3b30", manager: "#ff9500", staff: "#0071e3", readonly: "#8e8e93",
+  admin: "#ff3b30", supervisor: "#0071e3", user: "#34c759",
 };
 
 // ─── Sub-components OUTSIDE main component (critical for focus stability) ─────
 
 function RoleBadge({ role }: { role: string | null }) {
-  const r = role ?? "staff";
+  const r = role ?? "user";
   const color = ROLE_COLOR[r] ?? "#8e8e93";
   const label = ROLES.find(x => x.value === r)?.label ?? r;
   return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", padding: "2px 10px",
-      borderRadius: 20, fontSize: "0.75rem", fontWeight: 600,
-      background: `${color}18`, color,
-    }}>{label}</span>
+    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: `${color}18`, color }}>
+      {label}
+    </span>
   );
 }
 
@@ -77,7 +102,7 @@ function Field({ id, label, value, onChange, type = "text", placeholder, hint }:
         placeholder={placeholder}
         autoComplete="off"
       />
-      {hint && <p style={{ marginTop: 4, fontSize: "0.75rem", color: "var(--color-text-tertiary)" }}>{hint}</p>}
+      {hint && <p className="mt-1 text-xs text-[var(--color-text-tertiary)] font-medium">{hint}</p>}
     </div>
   );
 }
@@ -93,23 +118,17 @@ interface SectionProps {
 
 function Section({ isOpen, onToggle, title, icon, color, children }: SectionProps) {
   return (
-    <div className="glass-card" style={{ marginBottom: "1rem", overflow: "hidden" }}>
-      <button onClick={onToggle} style={{
-        width: "100%", padding: "1.125rem 1.5rem", display: "flex", alignItems: "center",
-        gap: "0.75rem", background: "none", border: "none", cursor: "pointer",
-        borderBottom: isOpen ? "1px solid var(--color-border)" : "none",
-      }}>
-        <div style={{
-          width: 36, height: 36, borderRadius: 10, background: color, flexShrink: 0,
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}>{icon}</div>
-        <span style={{ fontWeight: 600, fontSize: "0.9375rem", flex: 1, textAlign: "left", color: "var(--color-text-primary)" }}>
+    <div className="glass-card mb-4 overflow-hidden shadow-sm transition-all">
+      <button onClick={onToggle} className={`w-full px-6 py-4 flex items-center gap-3 bg-transparent border-none cursor-pointer transition-colors hover:bg-[var(--color-bg-primary)] ${isOpen ? 'border-b border-[var(--color-border)] bg-[var(--color-bg-primary)]/50' : ''}`}>
+        <div className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center shadow-sm" style={{ background: color }}>
+          {icon}
+        </div>
+        <span className="font-semibold text-[0.95rem] flex-1 text-left text-[var(--color-text-primary)] tracking-tight">
           {title}
         </span>
-        <ChevronDown size={16} color="var(--color-text-tertiary)"
-          style={{ transform: isOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+        <ChevronDown size={18} className="text-[var(--color-text-tertiary)] transition-transform duration-200" style={{ transform: isOpen ? "rotate(180deg)" : "none" }} />
       </button>
-      {isOpen && <div style={{ padding: "1.5rem" }}>{children}</div>}
+      {isOpen && <div className="p-6">{children}</div>}
     </div>
   );
 }
@@ -124,17 +143,54 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [gasStatus, setGasStatus] = useState<"idle" | "ok" | "error">("idle");
   const [pingMsg, setPingMsg] = useState("");
-  const [openSection, setOpenSection] = useState<string>("users");
+  const [openSection, setOpenSection] = useState<string>("quicksetup");
+
+  // ── Quick Setup state (paste URLs → auto-extract IDs) ─────────────────────
+  const [quickSheet, setQuickSheet] = useState("");
+  const [quickFolder, setQuickFolder] = useState("");
+  const [quickGas, setQuickGas] = useState("");
+  const [quickApplied, setQuickApplied] = useState(false);
+
+  const applyQuickSetup = async () => {
+    const sheetId  = extractSheetId(quickSheet);
+    const folderId = extractFolderId(quickFolder);
+    const gasUrl   = extractGasUrl(quickGas);
+    const next = {
+      ...settings,
+      registration_sheet_id: sheetId  || settings.registration_sheet_id,
+      drive_folder_id:        folderId || settings.drive_folder_id,
+      gas_web_app_url:        gasUrl   || settings.gas_web_app_url,
+    };
+    setSettings(next);
+    // Auto-save immediately
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next),
+      });
+      if (res.ok) { setQuickApplied(true); toast.success("✅ Configured and saved!"); }
+      else toast.error("Save failed");
+    } catch { toast.error("Save failed"); }
+  };
+
 
   const [users, setUsers] = useState<StaffUser[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [newUser, setNewUser] = useState<NewUserForm>({ email: "", password: "", name: "", role: "staff" });
+  const [newUser, setNewUser] = useState<NewUserForm>({ email: "", password: "", name: "", role: "user" });
   const [showPass, setShowPass] = useState(false);
   const [editUser, setEditUser] = useState<EditUserForm>(null);
   const [updatingUser, setUpdatingUser] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const loadUsers = useCallback(async () => {
+    setLoadingUsers(true);
+    try {
+      const res = await fetch("/api/admin/users");
+      if (res.ok) { const d = await res.json(); setUsers(d.users ?? []); }
+      else if (res.status === 403) toast.error("Admin role required to view users");
+    } finally { setLoadingUsers(false); }
+  }, []);
 
   // ── Load data ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -147,18 +203,11 @@ export default function SettingsPage() {
         drive_folder_id: s.drive_folder_id ?? "",
       });
     }).catch(console.error);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadUsers();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadUsers]);
 
-  const loadUsers = useCallback(async () => {
-    setLoadingUsers(true);
-    try {
-      const res = await fetch("/api/admin/users");
-      if (res.ok) { const d = await res.json(); setUsers(d.users ?? []); }
-      else if (res.status === 403) toast.error("Admin role required to view users");
-    } finally { setLoadingUsers(false); }
-  }, []);
+
 
   // ── Settings ──────────────────────────────────────────────────────────────
   const saveSettings = async () => {
@@ -192,7 +241,7 @@ export default function SettingsPage() {
       const data = await res.json();
       if (res.ok) {
         toast.success(`User "${newUser.email}" created`);
-        setNewUser({ email: "", password: "", name: "", role: "staff" });
+        setNewUser({ email: "", password: "", name: "", role: "user" });
         setShowAdd(false);
         loadUsers();
       } else {
@@ -230,15 +279,91 @@ export default function SettingsPage() {
   const toggle = (id: string) => setOpenSection(s => s === id ? "" : id);
 
   return (
-    <div style={{ padding: "1.5rem 2rem", maxWidth: 860, margin: "0 auto" }}>
-      <div style={{ marginBottom: "1.75rem" }}>
-        <h1 style={{ fontSize: "1.625rem", fontWeight: 700 }}>Settings</h1>
-        <p style={{ fontSize: "0.875rem", color: "var(--color-text-secondary)", marginTop: 2 }}>
+    <div className="p-6 md:p-8 max-w-[860px] mx-auto animate-fade-in">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight text-[var(--color-text-primary)] mb-1.5">Settings</h1>
+        <p className="text-[0.9rem] font-medium text-[var(--color-text-secondary)]">
           Manage staff accounts, Google integrations, and system configuration
         </p>
       </div>
 
-      {/* ── Staff Accounts ─────────────────────────────────────────────────── */}
+      {/* ── ⚡ Quick Setup ─────────────────────────────────────────────────── */}
+      <Section
+        isOpen={openSection === "quicksetup"}
+        onToggle={() => toggle("quicksetup")}
+        title="⚡ Quick Setup — Paste & Configure"
+        color="linear-gradient(135deg,#ff9500,#ff6b00)"
+        icon={<Zap size={18} color="white" />}
+      >
+        <p className="text-[0.85rem] font-medium text-[var(--color-text-secondary)] mb-5 leading-relaxed bg-[var(--color-bg-primary)] p-3 rounded-lg border border-[var(--color-border)]/50">
+          Paste your Google Sheet URL, Drive folder URL, and GAS Web App URL below.
+          The IDs are extracted automatically — just click <strong className="text-[var(--color-text-primary)]">Apply & Save</strong>.
+        </p>
+        <div className="flex flex-col gap-4 mb-6">
+          <div>
+            <label className="label flex items-center gap-1.5">
+              <Link2 size={14} className="text-[var(--color-text-tertiary)]" /> Google Sheet URL or ID
+            </label>
+            <input
+              className="input w-full"
+              placeholder="https://docs.google.com/spreadsheets/d/1BxiMVs0… or just paste the ID"
+              value={quickSheet}
+              onChange={e => setQuickSheet(e.target.value)}
+            />
+            {quickSheet && (
+              <p className="text-xs font-medium text-[var(--color-success)] mt-1.5 flex items-center gap-1">
+                <CheckCircle2 size={12} /> Extracted ID: <code className="font-mono bg-[var(--color-success-light)] px-1.5 py-0.5 rounded text-[0.7rem]">{extractSheetId(quickSheet)}</code>
+              </p>
+            )}
+          </div>
+          <div>
+            <label className="label flex items-center gap-1.5">
+              <Link2 size={14} className="text-[var(--color-text-tertiary)]" /> Drive Folder URL or ID
+            </label>
+            <input
+              className="input w-full"
+              placeholder="https://drive.google.com/drive/folders/1A2B3C… or just paste the ID"
+              value={quickFolder}
+              onChange={e => setQuickFolder(e.target.value)}
+            />
+            {quickFolder && (
+              <p className="text-xs font-medium text-[var(--color-success)] mt-1.5 flex items-center gap-1">
+                <CheckCircle2 size={12} /> Extracted ID: <code className="font-mono bg-[var(--color-success-light)] px-1.5 py-0.5 rounded text-[0.7rem]">{extractFolderId(quickFolder)}</code>
+              </p>
+            )}
+          </div>
+          <div>
+            <label className="label flex items-center gap-1.5">
+              <Link2 size={14} className="text-[var(--color-text-tertiary)]" /> GAS Web App URL
+            </label>
+            <input
+              className="input w-full"
+              placeholder="https://script.google.com/macros/s/AKfy…/exec"
+              value={quickGas}
+              onChange={e => setQuickGas(e.target.value)}
+            />
+            {quickGas && quickGas.includes("/exec") && (
+              <p className="text-xs font-medium text-[var(--color-success)] mt-1.5 flex items-center gap-1"><CheckCircle2 size={12} /> Valid GAS URL detected</p>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            className="btn-primary py-2 px-5 shadow-sm font-semibold"
+            onClick={applyQuickSetup}
+            disabled={!quickSheet && !quickFolder && !quickGas}
+          >
+            <Zap size={15} /> Apply &amp; Save
+          </button>
+          {quickApplied && (
+            <span className="text-[0.85rem] font-medium text-[var(--color-success)] flex items-center gap-1.5 bg-[var(--color-success-light)] px-3 py-1.5 rounded-lg">
+              <CheckCircle2 size={15} /> All configured!
+            </span>
+          )}
+        </div>
+      </Section>
+
+      {/* ── Staff Accounts ──────────────────────────────────────────────────── */}
       <Section
         isOpen={openSection === "users"}
         onToggle={() => toggle("users")}
@@ -246,23 +371,20 @@ export default function SettingsPage() {
         color="linear-gradient(135deg,#0071e3,#5856d6)"
         icon={<Shield size={18} color="white" />}
       >
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: "1rem" }}>
-          <button className="btn-secondary" onClick={loadUsers} title="Refresh">
-            <RefreshCw size={13} style={{ animation: loadingUsers ? "spin 1s linear infinite" : "none" }} />
+        <div className="flex justify-end gap-2 mb-5">
+          <button className="btn-secondary py-1.5 px-3" onClick={loadUsers} title="Refresh">
+            <RefreshCw size={14} className={loadingUsers ? "animate-spin" : ""} />
           </button>
-          <button className="btn-primary" onClick={() => { setShowAdd(v => !v); }}>
-            <Plus size={14} /> {showAdd ? "Cancel" : "Add Staff Account"}
+          <button className="btn-primary py-1.5 px-4 shadow-sm" onClick={() => { setShowAdd(v => !v); }}>
+            <Plus size={15} /> {showAdd ? "Cancel" : "Add Staff Account"}
           </button>
         </div>
 
         {/* Add user form — inputs use stable id/value/onChange pattern */}
         {showAdd && (
-          <div style={{
-            background: "rgba(0,113,227,0.05)", border: "1px solid rgba(0,113,227,0.2)",
-            borderRadius: 12, padding: "1.25rem", marginBottom: "1.25rem",
-          }}>
-            <h3 style={{ fontWeight: 600, fontSize: "0.9rem", marginBottom: "1rem" }}>New Staff Account</h3>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "0.75rem", marginBottom: "1rem" }}>
+          <div className="bg-[var(--color-accent-light)] border border-[var(--color-accent)]/20 rounded-xl p-5 mb-5 shadow-inner">
+            <h3 className="font-semibold text-[0.95rem] mb-4 text-[var(--color-accent)] flex items-center gap-1.5"><Shield size={14} /> New Staff Account</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
               <Field
                 id="new-email"
                 label="Username / Email *"
@@ -272,22 +394,18 @@ export default function SettingsPage() {
               />
               <div>
                 <label className="label" htmlFor="new-password">Password *</label>
-                <div style={{ position: "relative" }}>
+                <div className="relative">
                   <input
                     id="new-password"
                     type={showPass ? "text" : "password"}
-                    className="input"
+                    className="input pr-10"
                     value={newUser.password}
                     onChange={e => setNewUser(u => ({ ...u, password: e.target.value }))}
                     placeholder="Min 4 characters"
-                    style={{ paddingRight: "2.5rem" }}
                     autoComplete="new-password"
                   />
-                  <button type="button" onClick={() => setShowPass(v => !v)} style={{
-                    position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
-                    background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)",
-                  }}>
-                    {showPass ? <EyeOff size={14} /> : <Eye size={14} />}
+                  <button type="button" onClick={() => setShowPass(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors rounded bg-transparent border-none cursor-pointer">
+                    {showPass ? <EyeOff size={15} /> : <Eye size={15} />}
                   </button>
                 </div>
               </div>
@@ -306,37 +424,34 @@ export default function SettingsPage() {
                 </select>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn-primary" onClick={addUser} disabled={adding}>
+            <div className="flex gap-2.5">
+              <button className="btn-primary py-2 px-5 shadow-sm font-semibold" onClick={addUser} disabled={adding}>
                 {adding ? "Creating…" : "Create Account"}
               </button>
-              <button className="btn-secondary" onClick={() => setShowAdd(false)}>
-                <X size={13} /> Cancel
+              <button className="btn-secondary py-2 px-4" onClick={() => setShowAdd(false)}>
+                <X size={14} /> Cancel
               </button>
             </div>
           </div>
         )}
 
         {/* Role guide */}
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: "1rem" }}>
+        <div className="flex gap-2 flex-wrap mb-5">
           {ROLES.map(r => (
-            <div key={r.value} style={{
-              display: "flex", alignItems: "center", gap: 6, padding: "4px 10px",
-              borderRadius: 8, background: "rgba(120,120,128,0.08)", fontSize: "0.75rem",
-            }}>
-              <span style={{ width: 8, height: 8, borderRadius: "50%", background: ROLE_COLOR[r.value], flexShrink: 0 }} />
-              <strong style={{ color: "var(--color-text-primary)" }}>{r.label}</strong>
-              <span style={{ color: "var(--color-text-tertiary)" }}>— {r.desc}</span>
+            <div key={r.value} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--color-bg-primary)] border border-[var(--color-border)]/50 text-[0.75rem] font-medium">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: ROLE_COLOR[r.value] }} />
+              <strong className="text-[var(--color-text-primary)]">{r.label}</strong>
+              <span className="text-[var(--color-text-tertiary)]">— {r.desc}</span>
             </div>
           ))}
         </div>
 
         {/* Users table */}
-        <div style={{ border: "1px solid var(--color-border)", borderRadius: 12, overflow: "hidden" }}>
+        <div className="border border-[var(--color-border)] rounded-xl overflow-hidden bg-[var(--color-surface)] shadow-sm">
           {loadingUsers ? (
-            <div style={{ padding: "2rem", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: "0.875rem" }}>Loading…</div>
+            <div className="p-8 text-center text-[var(--color-text-tertiary)] text-[0.875rem] font-medium flex justify-center items-center gap-2"><RefreshCw size={16} className="animate-spin" /> Loading…</div>
           ) : users.length === 0 ? (
-            <div style={{ padding: "2rem", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: "0.875rem" }}>
+            <div className="p-8 text-center text-[var(--color-text-tertiary)] text-[0.875rem] font-medium bg-[var(--color-bg-primary)]/30">
               No staff accounts yet. Create the first account above.
             </div>
           ) : (
@@ -348,33 +463,28 @@ export default function SettingsPage() {
                 {users.map(u => (
                   <tr key={u.id}>
                     <td>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <div style={{
-                          width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
-                          background: `linear-gradient(135deg,${ROLE_COLOR[u.role ?? "staff"]},${ROLE_COLOR[u.role ?? "staff"]}88)`,
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: "0.8125rem", fontWeight: 700, color: "white",
-                        }}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-white text-[0.8125rem] font-bold shadow-sm" style={{ background: `linear-gradient(135deg,${ROLE_COLOR[u.role ?? "user"]},${ROLE_COLOR[u.role ?? "user"]}88)` }}>
                           {(u.name ?? u.email)[0].toUpperCase()}
                         </div>
-                        <span style={{ fontWeight: 500 }}>{u.name ?? "—"}</span>
+                        <span className="font-semibold text-[0.9rem] text-[var(--color-text-primary)]">{u.name ?? "—"}</span>
                       </div>
                     </td>
                     <td><code style={{ fontSize: "0.8125rem" }}>{u.email}</code></td>
                     <td><RoleBadge role={u.role} /></td>
-                    <td style={{ color: "var(--color-text-tertiary)", fontSize: "0.8125rem" }}>
+                    <td className="text-[var(--color-text-tertiary)] font-medium text-xs">
                       {u.createdAt ? new Date(u.createdAt).toLocaleDateString("en-GB") : "—"}
                     </td>
                     <td>
-                      <div style={{ display: "flex", gap: 4 }}>
-                        <button title="Edit" className="btn-secondary" style={{ padding: "0.25rem 0.5rem" }}
-                          onClick={() => setEditUser({ id: u.id, name: u.name ?? "", role: u.role ?? "staff", password: "" })}>
-                          <Pencil size={13} />
+                      <div className="flex gap-1.5">
+                        <button title="Edit" className="p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-primary)] rounded-md transition-colors cursor-pointer"
+                          onClick={() => setEditUser({ id: u.id, name: u.name ?? "", role: u.role ?? "user", password: "" })}>
+                          <Pencil size={15} />
                         </button>
                         <button title="Delete" disabled={deletingId === u.id}
                           onClick={() => deleteUser(u.id, u.email)}
-                          style={{ padding: "0.25rem 0.5rem", background: "rgba(255,59,48,0.1)", border: "1px solid rgba(255,59,48,0.2)", borderRadius: 8, cursor: "pointer", color: "#ff3b30", display: "flex", alignItems: "center" }}>
-                          <Trash2 size={13} />
+                          className="p-1.5 text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] rounded-md transition-colors cursor-pointer flex items-center">
+                          <Trash2 size={15} />
                         </button>
                       </div>
                     </td>
@@ -394,7 +504,7 @@ export default function SettingsPage() {
         color="linear-gradient(135deg,#4285f4,#34a853)"
         icon={<ExternalLink size={18} color="white" />}
       >
-        <div style={{ marginBottom: "1rem" }}>
+        <div className="mb-5">
           <Field
             id="gas-url"
             label="GAS Web App URL"
@@ -404,22 +514,22 @@ export default function SettingsPage() {
             hint="Deploy gas/Code.gs → Web App → Anyone → copy URL here"
           />
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "1rem" }}>
-          <button className="btn-secondary" onClick={testGas}>
-            <RefreshCw size={13} /> Test Connection
+        <div className="flex items-center gap-3 mb-5">
+          <button className="btn-secondary py-2" onClick={testGas}>
+            <RefreshCw size={14} className={gasStatus === "idle" && pingMsg ? "animate-spin" : ""} /> Test Connection
           </button>
           {gasStatus !== "idle" && (
-            <span style={{ fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: 4, fontWeight: 500, color: gasStatus === "ok" ? "var(--color-success)" : "var(--color-danger)" }}>
-              {gasStatus === "ok" ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />} {pingMsg}
+            <span className={`text-[0.85rem] flex items-center gap-1.5 font-semibold px-3 py-1.5 rounded-lg ${gasStatus === "ok" ? "text-[var(--color-success)] bg-[var(--color-success-light)]" : "text-[var(--color-danger)] bg-[var(--color-danger-light)]"}`}>
+              {gasStatus === "ok" ? <CheckCircle2 size={15} /> : <AlertCircle size={15} />} {pingMsg}
             </span>
           )}
         </div>
-        <div style={{ background: "rgba(120,120,128,0.07)", borderRadius: 12, padding: "1rem", fontSize: "0.8125rem" }}>
-          <p style={{ fontWeight: 600, marginBottom: "0.5rem" }}>Setup:</p>
-          <ol style={{ paddingLeft: "1.25rem", lineHeight: 2, color: "var(--color-text-secondary)" }}>
-            <li>Open <a href="https://script.google.com" target="_blank" rel="noreferrer" style={{ color: "var(--color-accent)" }}>script.google.com</a> → New Project</li>
-            <li>Paste <code>gas/Code.gs</code> → set your folder ID in CONFIG block</li>
-            <li>Deploy → Web App → Execute as <strong>Me</strong> → Access: <strong>Anyone</strong></li>
+        <div className="bg-[var(--color-bg-primary)] rounded-xl p-5 text-[0.85rem] border border-[var(--color-border)] shadow-inner">
+          <p className="font-bold mb-2 flex items-center gap-1.5 text-[var(--color-text-primary)]"><Shield size={14} className="text-[var(--color-accent)]"/> Setup Instructions:</p>
+          <ol className="list-decimal pl-5 space-y-1.5 text-[var(--color-text-secondary)] marker:text-[var(--color-text-tertiary)] marker:font-semibold">
+            <li>Open <a href="https://script.google.com" target="_blank" rel="noreferrer" className="text-[var(--color-accent)] hover:underline font-medium">script.google.com</a> → New Project</li>
+            <li>Paste <code className="bg-[var(--color-surface)] px-1 py-0.5 rounded border border-[var(--color-border)] text-xs font-mono">gas/Code.gs</code> → set your folder ID in CONFIG block</li>
+            <li>Deploy → Web App → Execute as <strong className="text-[var(--color-text-primary)]">Me</strong> → Access: <strong className="text-[var(--color-text-primary)]">Anyone</strong></li>
             <li>Copy Web App URL → paste above → Save</li>
           </ol>
         </div>
@@ -433,17 +543,35 @@ export default function SettingsPage() {
         color="linear-gradient(135deg,#34a853,#0f9d58)"
         icon={<Save size={18} color="white" />}
       >
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.875rem" }}>
-          <Field id="sheet-id" label="Spreadsheet ID"
-            value={settings.registration_sheet_id}
-            onChange={v => setSettings(s => ({ ...s, registration_sheet_id: v }))}
-            placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"
-            hint="From URL: /spreadsheets/d/[ID]/edit" />
-          <Field id="drive-id" label="Drive Folder ID"
-            value={settings.drive_folder_id}
-            onChange={v => setSettings(s => ({ ...s, drive_folder_id: v }))}
-            placeholder="1A2B3C4D5E6F…"
-            hint="From Drive URL: /folders/[ID]" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div>
+            <label className="label" htmlFor="sheet-id">Spreadsheet ID or URL</label>
+            <input
+              id="sheet-id" className="input"
+              value={settings.registration_sheet_id}
+              onChange={e => setSettings(s => ({ ...s, registration_sheet_id: extractSheetId(e.target.value) }))}
+              onPaste={e => {
+                e.preventDefault();
+                setSettings(s => ({ ...s, registration_sheet_id: extractSheetId(e.clipboardData.getData("text")) }));
+              }}
+              placeholder="Paste URL or ID — auto-extracted"
+            />
+            <p className="mt-1.5 text-xs text-[var(--color-text-tertiary)] font-medium">From URL: /spreadsheets/d/<strong className="text-[var(--color-text-secondary)]">[ID]</strong>/edit</p>
+          </div>
+          <div>
+            <label className="label" htmlFor="drive-id">Drive Folder URL or ID</label>
+            <input
+              id="drive-id" className="input"
+              value={settings.drive_folder_id}
+              onChange={e => setSettings(s => ({ ...s, drive_folder_id: extractFolderId(e.target.value) }))}
+              onPaste={e => {
+                e.preventDefault();
+                setSettings(s => ({ ...s, drive_folder_id: extractFolderId(e.clipboardData.getData("text")) }));
+              }}
+              placeholder="Paste URL or ID — auto-extracted"
+            />
+            <p className="mt-1.5 text-xs text-[var(--color-text-tertiary)] font-medium">From URL: /folders/<strong className="text-[var(--color-text-secondary)]">[ID]</strong></p>
+          </div>
           <Field id="reg-sheet-name" label="Registration Sheet Tab"
             value={settings.registration_sheet_name}
             onChange={v => setSettings(s => ({ ...s, registration_sheet_name: v }))}
@@ -455,22 +583,23 @@ export default function SettingsPage() {
         </div>
       </Section>
 
+
       {/* ── Save ──────────────────────────────────────────────────────────────*/}
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.5rem" }}>
-        <button className="btn-primary" onClick={saveSettings} disabled={saving} style={{ padding: "0.625rem 1.5rem" }}>
-          <Save size={14} /> {saving ? "Saving…" : "Save All Settings"}
+      <div className="flex justify-end mt-6">
+        <button className="btn-primary py-3 px-8 shadow-md font-bold text-[0.95rem]" onClick={saveSettings} disabled={saving}>
+          <Save size={16} /> {saving ? "Saving…" : "Save All Settings"}
         </button>
       </div>
 
       {/* ── Edit User Modal ────────────────────────────────────────────────── */}
       {editUser && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
-          <div className="glass-card-elevated" style={{ width: "100%", maxWidth: 420, padding: "1.5rem" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
-              <h3 style={{ fontWeight: 700, fontSize: "1rem" }}>Edit Account</h3>
-              <button onClick={() => setEditUser(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)" }}><X size={18} /></button>
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="glass-card-elevated w-full max-w-[420px] p-6 animate-scale-in">
+            <div className="flex justify-between items-center mb-5">
+              <h3 className="font-bold text-[1.1rem]">Edit Account</h3>
+              <button onClick={() => setEditUser(null)} className="p-1.5 rounded-md hover:bg-[var(--color-bg-primary)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors"><X size={18} /></button>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <div className="flex flex-col gap-4">
               <Field id="edit-name" label="Display Name"
                 value={editUser.name}
                 onChange={v => setEditUser(e => e ? { ...e, name: v } : null)}
@@ -484,18 +613,18 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="label" htmlFor="edit-password">
-                  New Password <span style={{ color: "var(--color-text-tertiary)", fontWeight: 400 }}>(blank = keep current)</span>
+                  New Password <span className="text-[var(--color-text-tertiary)] font-normal ml-1">(blank = keep current)</span>
                 </label>
                 <input id="edit-password" type="password" className="input" value={editUser.password}
                   onChange={e => setEditUser(u => u ? { ...u, password: e.target.value } : null)}
                   placeholder="New password (optional)" autoComplete="new-password" />
               </div>
             </div>
-            <div style={{ display: "flex", gap: 8, marginTop: "1.25rem" }}>
-              <button className="btn-primary" onClick={updateUser} disabled={updatingUser} style={{ flex: 1 }}>
+            <div className="flex gap-2 mt-6">
+              <button className="btn-primary flex-1 justify-center py-2.5 font-semibold shadow-sm" onClick={updateUser} disabled={updatingUser}>
                 {updatingUser ? "Saving…" : "Save Changes"}
               </button>
-              <button className="btn-secondary" onClick={() => setEditUser(null)}>Cancel</button>
+              <button className="btn-secondary py-2.5 px-5" onClick={() => setEditUser(null)}>Cancel</button>
             </div>
           </div>
         </div>

@@ -2,68 +2,72 @@ import {
   pgTable,
   serial,
   text,
-  varchar,
   integer,
   numeric,
-  boolean,
   timestamp,
   date,
   time,
   jsonb,
-  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 // ─── Users ───────────────────────────────────────────────────────────────────
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  email: varchar("email", { length: 320 }).notNull().unique(),
+  email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
-  name: varchar("name", { length: 255 }),
-  role: varchar("role", { length: 50 }).default("staff").notNull(),
+  name: text("name"),
+  role: text("role").default("staff").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 // ─── Registrations ────────────────────────────────────────────────────────────
+// Columns mirror the Google Form exactly:
+// Timestamp | Sr No | Title | First Name | Last Name | Country Name
+// Passport Country | Region | Participant Mobile | Participant Email
+// Company Name | Company Website | Designation | Passport Number
+// Place of Issue | Date of Expiry | Passport Front Copy | Passport Back Copy
+// Nature of Business | Main Import Product 1 | Main Import Product 2
+// Upload proof of Import | Products/Services | Business Card Upload
+// POC | Proof of Import | Type of POI | B/L Supplier Country | B/L Buyer Country
+// Status | Flight & Hotel | Remarks | B/L Status | BB Invitation letter status
 export const registrations = pgTable("registrations", {
   id: serial("id").primaryKey(),
   srNo: integer("sr_no"),
   timestampRaw: text("timestamp_raw"),
-  title: varchar("title", { length: 20 }),
-  firstName: varchar("first_name", { length: 120 }),
-  lastName: varchar("last_name", { length: 120 }),
-  countryName: varchar("country_name", { length: 100 }),
-  passportCountry: varchar("passport_country", { length: 100 }),
-  region: varchar("region", { length: 100 }),
-  participantMobile: varchar("participant_mobile", { length: 50 }),
-  participantEmail: varchar("participant_email", { length: 320 }),
-  companyName: varchar("company_name", { length: 255 }),
-  companyWebsite: varchar("company_website", { length: 500 }),
-  designation: varchar("designation", { length: 200 }),
-  passportNumber: varchar("passport_number", { length: 50 }),
-  placeOfIssue: varchar("place_of_issue", { length: 100 }),
-  dateOfExpiry: varchar("date_of_expiry", { length: 30 }),
-  passportFrontCopy: text("passport_front_copy"),
-  passportBackCopy: text("passport_back_copy"),
+  title: text("title"),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  countryName: text("country_name"),
+  passportCountry: text("passport_country"),
+  region: text("region"),
+  participantMobile: text("participant_mobile"),
+  participantEmail: text("participant_email"),
+  companyName: text("company_name"),
+  companyWebsite: text("company_website"),
+  designation: text("designation"),
+  passportNumber: text("passport_number"),
+  placeOfIssue: text("place_of_issue"),
+  dateOfExpiry: text("date_of_expiry"),
+  passportFrontCopy: text("passport_front_copy"),        // Google Form file URL
+  passportBackCopy: text("passport_back_copy"),          // Google Form file URL
   natureOfBusiness: text("nature_of_business"),
-  mainImportProduct1: varchar("main_import_product_1", { length: 200 }),
-  mainImportProduct2: varchar("main_import_product_2", { length: 200 }),
-  proofUpload: text("proof_upload"),
+  mainImportProduct1: text("main_import_product_1"),
+  mainImportProduct2: text("main_import_product_2"),
+  proofUpload: text("proof_upload"),                     // B/L or other proof file URL
   productsServices: text("products_services"),
-  businessCardUpload: text("business_card_upload"),
-  poc: varchar("poc", { length: 100 }),
-  proofImport: varchar("proof_import", { length: 50 }),
-  typeOfPoi: varchar("type_of_poi", { length: 100 }),
-  blSupplierCountry: varchar("bl_supplier_country", { length: 100 }),
-  blBuyerCountry: varchar("bl_buyer_country", { length: 100 }),
-  status: varchar("status", { length: 100 }),
-  flightHotelCode: varchar("flight_hotel_code", { length: 20 }),
+  businessCardUpload: text("business_card_upload"),      // Business card file URL
+  poc: text("poc"),
+  proofImport: text("proof_import"),
+  typeOfPoi: text("type_of_poi"),
+  blSupplierCountry: text("bl_supplier_country"),
+  blBuyerCountry: text("bl_buyer_country"),
+  status: text("status"),
+  flightHotelCode: text("flight_hotel_code"),
   remarks: text("remarks"),
-  blStatus: varchar("bl_status", { length: 100 }),
-  bbInvitationStatus: varchar("bb_invitation_status", { length: 100 }),
-  dollarBusiness: varchar("dollar_business", { length: 100 }),
-  vujis: varchar("vujis", { length: 100 }),
-  // Google Drive file URLs
+  blStatus: text("bl_status"),
+  bbInvitationStatus: text("bb_invitation_status"),
+  // Google Drive mirrored URLs (set by GAS after upload)
   drivePassportFrontUrl: text("drive_passport_front_url"),
   drivePassportBackUrl: text("drive_passport_back_url"),
   driveProofUrl: text("drive_proof_url"),
@@ -76,39 +80,39 @@ export const registrations = pgTable("registrations", {
 export const travelRecords = pgTable("travel_records", {
   id: serial("id").primaryKey(),
   registrationId: integer("registration_id").references(() => registrations.id, { onDelete: "set null" }),
-  responsesSrNo: varchar("responses_sr_no", { length: 20 }),
-  roomNo: varchar("room_no", { length: 30 }),
-  hotelName: varchar("hotel_name", { length: 255 }),
-  initial: varchar("initial", { length: 20 }),
-  firstName: varchar("first_name", { length: 120 }),
-  lastName: varchar("last_name", { length: 120 }),
-  countryName: varchar("country_name", { length: 100 }),
-  countryCode: varchar("country_code", { length: 10 }),
-  participantMobile: varchar("participant_mobile", { length: 50 }),
+  responsesSrNo: text("responses_sr_no"),
+  roomNo: text("room_no"),
+  hotelName: text("hotel_name"),
+  initial: text("initial"),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  countryName: text("country_name"),
+  countryCode: text("country_code"),
+  participantMobile: text("participant_mobile"),
   checkInDate: date("check_in_date"),
   checkOutDate: date("check_out_date"),
   roomUnits: numeric("room_units", { precision: 4, scale: 2 }),
   arrivalDate: date("arrival_date"),
-  arrivalFlightNo: varchar("arrival_flight_no", { length: 50 }),
-  arrivalTo: varchar("arrival_to", { length: 255 }),
+  arrivalFlightNo: text("arrival_flight_no"),
+  arrivalTo: text("arrival_to"),
   arrivalTime: time("arrival_time"),
   departureDate: date("departure_date"),
-  departureFlightNo: varchar("departure_flight_no", { length: 50 }),
-  departureFrom: varchar("departure_from", { length: 255 }),
+  departureFlightNo: text("departure_flight_no"),
+  departureFrom: text("departure_from"),
   departureTime: time("departure_time"),
-  sector: varchar("sector", { length: 200 }),
-  companyName: varchar("company_name", { length: 255 }),
-  poc: varchar("poc", { length: 100 }),
-  status: varchar("status", { length: 50 }).default("Pending"),
-  reimbursement: varchar("reimbursement", { length: 10 }).default("No"),
+  sector: text("sector"),
+  companyName: text("company_name"),
+  poc: text("poc"),
+  status: text("status").default("Pending"),
+  reimbursement: text("reimbursement").default("No"),
   notes: text("notes"),
-  invoiceAmount: varchar("invoice_amount", { length: 50 }),
-  invoiceAmountUsd: varchar("invoice_amount_usd", { length: 50 }),
-  ticketReceived: varchar("ticket_received", { length: 10 }).default("No"),
-  invoiceReceived: varchar("invoice_received", { length: 10 }).default("No"),
-  visaReceived: varchar("visa_received", { length: 10 }).default("No"),
-  passportCopyReceived: varchar("passport_copy_received", { length: 10 }).default("No"),
-  voucherReceived: varchar("voucher_received", { length: 10 }).default("No"),
+  invoiceAmount: text("invoice_amount"),
+  invoiceAmountUsd: text("invoice_amount_usd"),
+  ticketReceived: text("ticket_received").default("No"),
+  invoiceReceived: text("invoice_received").default("No"),
+  visaReceived: text("visa_received").default("No"),
+  passportCopyReceived: text("passport_copy_received").default("No"),
+  voucherReceived: text("voucher_received").default("No"),
   // Google Drive URLs
   ticketUrl: text("ticket_url"),
   invoiceUrl: text("invoice_url"),
@@ -140,10 +144,18 @@ export const appSettings = pgTable("app_settings", {
 export const auditLog = pgTable("audit_log", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
-  action: varchar("action", { length: 100 }).notNull(),
-  entityType: varchar("entity_type", { length: 50 }),
+  action: text("action").notNull(),
+  entityType: text("entity_type"),
   entityId: integer("entity_id"),
   metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ─── Chat Messages ────────────────────────────────────────────────────────────
+export const chatMessages = pgTable("chat_messages", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
+  message: text("message").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -156,3 +168,7 @@ export type TravelRecord = typeof travelRecords.$inferSelect;
 export type NewTravelRecord = typeof travelRecords.$inferInsert;
 export type AppSettings = typeof appSettings.$inferSelect;
 export type AuditLog = typeof auditLog.$inferSelect;
+export type ChatMessage = typeof chatMessages.$inferSelect;
+export type NewChatMessage = typeof chatMessages.$inferInsert;
+
+// Trigger HMR

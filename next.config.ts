@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["@neondatabase/serverless", "bcryptjs"],
+  serverExternalPackages: ["postgres", "bcryptjs"],
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "drive.google.com" },
@@ -9,5 +9,6 @@ const nextConfig: NextConfig = {
     ],
   },
 };
+
 
 export default nextConfig;

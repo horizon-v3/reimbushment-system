@@ -40,8 +40,8 @@ export async function POST(request: Request) {
     if (!email?.trim() || !password?.trim())
       return NextResponse.json({ error: "email and password are required" }, { status: 400 });
 
-    const validRoles = ["admin", "manager", "staff", "readonly"];
-    const assignedRole = validRoles.includes(role ?? "") ? role! : "staff";
+    const validRoles = ["admin", "supervisor", "user"];
+    const assignedRole = validRoles.includes(role ?? "") ? role! : "user";
 
     const passwordHash = await hash(password, 12);
 
@@ -72,7 +72,7 @@ export async function PUT(request: Request) {
     };
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-    const validRoles = ["admin", "manager", "staff", "readonly"];
+    const validRoles = ["admin", "supervisor", "user"];
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (role && validRoles.includes(role)) updates.role = role;
     if (name) updates.name = name;

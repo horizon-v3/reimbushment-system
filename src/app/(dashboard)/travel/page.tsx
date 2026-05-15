@@ -1,10 +1,18 @@
+import { auth } from "@/auth";
 import TravelDeskPage from "@/components/travel/TravelDeskPage";
+import { redirect } from "next/navigation";
 
 export const metadata = {
   title: "Travel Desk — DelegateConnect",
   description: "Manage delegate travel records: flights, hotels, visas, invoices",
 };
 
-export default function Page() {
-  return <TravelDeskPage />;
+export default async function Page() {
+  const session = await auth();
+  const role = (session?.user as { role?: string } | undefined)?.role ?? "user";
+  if (role === "user") {
+    redirect("/chat");
+  }
+  const isAdmin = role === "admin";
+  return <TravelDeskPage isAdmin={isAdmin} />;
 }

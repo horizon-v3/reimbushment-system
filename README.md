@@ -1,36 +1,43 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# DelegateConnect — International CRM
 
-## Getting Started
+Enterprise-grade delegate management platform for international trade shows. Built with Next.js 16, Drizzle ORM, and PostgreSQL (Neon/Supabase).
 
-First, run the development server:
+## 🚀 Deployment to Vercel
 
+This repository is strictly configured and **100% ready** for production deployment on Vercel.
+
+### 1. Prerequisites
+Before deploying, make sure you have your production database ready (Neon or Supabase).
+
+### 2. Required Environment Variables
+When deploying on Vercel, you must set the following **Environment Variables** in the Vercel Dashboard (Settings > Environment Variables):
+
+- `DATABASE_URL` — Your PostgreSQL connection string (e.g., `postgres://user:pass@host:5432/db`)
+- `AUTH_SECRET` — A secure random string for NextAuth. You can generate one via terminal: `npx auth secret`
+
+*(Note: `NEXTAUTH_URL` is completely optional on Vercel because we use `trustHost: true` in the Auth config)*
+
+### 3. Deploy
+1. Push this repository to GitHub.
+2. Go to [Vercel](https://vercel.com/new) and import the repository.
+3. Add the Environment Variables above.
+4. Click **Deploy**.
+
+The `vercel.json` and `package.json` are already configured to run `npm run build` safely.
+
+### 4. Setup Database Schema
+Because Drizzle Kit's standard `db:push` has known incompatibilities in serverless functions out of the box, we have provided a custom migration script that flawlessly syncs your database schema.
+
+**After you have your production `DATABASE_URL`**, run this locally to prepare your production database:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+node run-migration.mjs
 ```
+*(This script will create all missing columns, the `app_settings` table, and the new `chat_messages` table)*
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Modules & Roles
+1. **Admin (`admin`)**: Access to Settings (Database/GAS config, user creation), CRM Home, Travel Desk, and Team Chat.
+2. **Supervisor (`supervisor`)**: Access to CRM Home (Read-Only/Export) and Travel Desk.
+3. **User (`user`)**: Locked out of dashboards. Automatically routed to the real-time Team Chat.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+Built by DelegateConnect Team.

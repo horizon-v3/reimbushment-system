@@ -1,8 +1,8 @@
 "use client";
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { Download, Upload, Pencil, Trash2, RefreshCw, Copy } from "lucide-react";
+import { Download, Upload, Pencil, Trash2, RefreshCw, Copy, Lock, Link } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
   type RegistrationRow, type TravelRow,
@@ -10,6 +10,19 @@ import {
   extractCountryCode, CSV_HEADER_MAP, parseCsv,
 } from "@/lib/crm-utils";
 import { uploadFileToDrive } from "@/lib/gas-client";
+
+// --- Extracted components ---
+const FLD = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <div><label className="label">{label}</label>{children}</div>
+);
+
+const SEL = ({ label, value, onChange, opts }: { label: string; value: string; onChange: (v: string) => void; opts: string[] }) => (
+  <FLD label={label}>
+    <select className="input" value={value} onChange={e => onChange(e.target.value)}>
+      {opts.map(o => <option key={o}>{o}</option>)}
+    </select>
+  </FLD>
+);
 
 const fetcher = (u: string) => fetch(u).then(r => r.json());
 
@@ -28,14 +41,15 @@ const EMPTY_FORM = {
 type FormState = typeof EMPTY_FORM;
 type FileMap = { ticket?: File; invoice?: File; visa?: File; passport?: File; voucher?: File };
 
-export default function TravelDeskPage() {
+export default function TravelDeskPage({ isAdmin = false }: { isAdmin?: boolean }) {
   const { data: regsData } = useSWR<{ rows: RegistrationRow[] }>("/api/registrations?limit=5000", fetcher);
   const { data: travData, mutate } = useSWR<{ rows: TravelRow[] }>("/api/travel?limit=5000", fetcher);
-  const regs = regsData?.rows ?? [];
-  const records = travData?.rows ?? [];
+  const regs = useMemo(() => regsData?.rows ?? [], [regsData?.rows]);
+  const records = useMemo(() => travData?.rows ?? [], [travData?.rows]);
 
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [travelSearch, setTravelSearch] = useState("");
   const [files, setFiles] = useState<FileMap>({});
   const [saving, setSaving] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
@@ -127,10 +141,29 @@ export default function TravelDeskPage() {
   };
 
   const deleteRecord = async (id: number) => {
+    if (!isAdmin) return toast.error("Admin access required");
     if (!confirm("Delete this travel record?")) return;
     const res = await fetch(`/api/travel?id=${id}`, { method: "DELETE" });
+    const d = await res.json();
     if (res.ok) { toast.success("Deleted"); mutate(); }
-    else toast.error("Delete failed");
+    else toast.error(d.error ?? "Delete failed");
+  };
+
+  const fetchPassportUrl = async (travelId: number) => {
+    const tid = toast.loading("Fetching passport URL from sheet…");
+    try {
+      const res = await fetch("/api/travel/fetch-passport", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ travelId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success("Passport URL fetched & saved ✓", { id: tid });
+      mutate();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed", { id: tid });
+    }
   };
 
   const downloadXlsx = () => {
@@ -165,46 +198,38 @@ export default function TravelDeskPage() {
   const tSector = pivotCount(ticketRecords, r => r.sector);
   const tPoc = pivotCount(ticketRecords, r => r.poc);
 
-  const FLD = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div><label className="label">{label}</label>{children}</div>
-  );
-  const SEL = ({ label, k, opts }: { label: string; k: keyof FormState; opts: string[] }) => (
-    <FLD label={label}>
-      <select className="input" value={form[k] as string} onChange={e => set(k, e.target.value)}>
-        {opts.map(o => <option key={o}>{o}</option>)}
-      </select>
-    </FLD>
-  );
-
   return (
-    <div style={{ padding: "1.5rem 2rem", maxWidth: 1400, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.75rem" }}>
+    <div className="p-6 md:p-8 max-w-[1400px] mx-auto animate-fade-in">
+      <div className="flex flex-col md:flex-row md:items-start justify-between mb-8 gap-4">
         <div>
-          <h1 style={{ fontSize: "1.625rem", fontWeight: 700 }}>Travel Desk</h1>
-          <p style={{ fontSize: "0.875rem", color: "var(--color-text-secondary)" }}>
+          <h1 className="text-3xl font-bold text-[var(--color-text-primary)] mb-1.5 tracking-tight">Travel Desk</h1>
+          <p className="text-[0.9rem] font-medium text-[var(--color-text-secondary)]">
             {records.length} records · {ticketRecords.length} tickets received
           </p>
         </div>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button className="btn-secondary" onClick={() => setShowBulk(!showBulk)}><Upload size={14} /> Bulk CSV</button>
-          <button className="btn-primary" onClick={downloadXlsx}><Download size={14} /> Export XLSX</button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          {isAdmin ? (
+            <>
+              <button className="btn-secondary py-2" onClick={() => setShowBulk(!showBulk)}><Upload size={14} /> Bulk CSV</button>
+              <button className="btn-primary py-2 shadow-sm" onClick={downloadXlsx}><Download size={14} /> Export XLSX</button>
+            </>
+          ) : (
+            <span title="Admin access required" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[0.8125rem] font-medium text-[var(--color-text-tertiary)] border border-[var(--color-border)] cursor-not-allowed bg-[var(--color-surface)]">
+              <Lock size={14} /> Admin Only
+            </span>
+          )}
           <button className="btn-secondary" onClick={() => mutate()}><RefreshCw size={14} /></button>
         </div>
       </div>
 
       {/* Form */}
-      <div className="glass-card" style={{ padding: "1.25rem", marginBottom: "1.25rem" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-          <h3 style={{ fontWeight: 600, fontSize: "1rem" }}>{editId ? "Edit Travel Record" : "New Travel Record"}</h3>
-          {editId && <button className="btn-secondary" style={{ padding: "0.25rem 0.75rem", fontSize: "0.8125rem" }} onClick={reset}>Cancel Edit</button>}
+      <div className="glass-card p-6 mb-8">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-[1.1rem] font-bold tracking-tight">{editId ? "Edit Travel Record" : "New Travel Record"}</h3>
+          {editId && <button className="btn-secondary py-1 px-3 text-xs" onClick={reset}>Cancel Edit</button>}
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "0.75rem" }}>
-          <FLD label="Delegate">
-            <select className="input" value={form.registration_id} onChange={e => onSelectDelegate(e.target.value)}>
-              <option value="">Select a delegate…</option>
-              {regs.map(r => <option key={r.id} value={String(r.id)}>{r.sr_no}. {r.first_name} {r.last_name} | {r.country_name ?? ""}</option>)}
-            </select>
-          </FLD>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <DelegateSearch regs={regs} value={form.registration_id} onSelect={onSelectDelegate} />
           {(["responses_sr_no","initial","first_name","last_name","country_name","participant_mobile","country_code","company_name","sector","poc","room_no","hotel_name","arrival_flight_no","arrival_to","departure_flight_no","departure_from","invoice_amount","invoice_amount_usd"] as (keyof FormState)[]).map(k => (
             <FLD key={k} label={k.replace(/_/g," ").replace(/\b\w/g,m=>m.toUpperCase())}>
               <input className="input" value={form[k] as string}
@@ -222,60 +247,95 @@ export default function TravelDeskPage() {
               <input type="time" className="input" value={form[k] as string} onChange={e => set(k, e.target.value)} />
             </FLD>
           ))}
-          <SEL label="Occupancy" k="room_units" opts={["1","0.5"]} />
-          <SEL label="Status" k="status" opts={["Confirmed","Can't Verify","Pending","Cancelled"]} />
-          <SEL label="Reimbursement" k="reimbursement" opts={["Yes","No"]} />
-          <SEL label="Ticket Received" k="ticket_received" opts={["Yes","No"]} />
-          <SEL label="Invoice Received" k="invoice_received" opts={["Yes","No"]} />
-          <SEL label="Visa Received" k="visa_received" opts={["Yes","No"]} />
-          <SEL label="Passport Copy" k="passport_copy_received" opts={["Yes","No"]} />
-          <SEL label="Voucher Received" k="voucher_received" opts={["Yes","No"]} />
+          <SEL label="Occupancy" value={form.room_units as string} onChange={v => set("room_units", v)} opts={["1","0.5"]} />
+          <SEL label="Status" value={form.status as string} onChange={v => set("status", v)} opts={["Confirmed","Can't Verify","Pending","Cancelled"]} />
+          <SEL label="Reimbursement" value={form.reimbursement as string} onChange={v => set("reimbursement", v)} opts={["Yes","No"]} />
+          <SEL label="Ticket Received" value={form.ticket_received as string} onChange={v => set("ticket_received", v)} opts={["Yes","No"]} />
+          <SEL label="Invoice Received" value={form.invoice_received as string} onChange={v => set("invoice_received", v)} opts={["Yes","No"]} />
+          <SEL label="Visa Received" value={form.visa_received as string} onChange={v => set("visa_received", v)} opts={["Yes","No"]} />
+          <SEL label="Passport Copy" value={form.passport_copy_received as string} onChange={v => set("passport_copy_received", v)} opts={["Yes","No"]} />
+          <SEL label="Voucher Received" value={form.voucher_received as string} onChange={v => set("voucher_received", v)} opts={["Yes","No"]} />
           {(["ticket","invoice","visa","passport","voucher"] as (keyof FileMap)[]).map(k => (
             <FLD key={k} label={`${k.charAt(0).toUpperCase()+k.slice(1)} File (Drive Upload)`}>
               <input type="file" className="input" style={{ padding: "0.375rem" }} onChange={e => setFiles(f => ({ ...f, [k]: e.target.files?.[0] }))} />
             </FLD>
           ))}
-          <div style={{ gridColumn: "1 / -1" }}>
+          <div className="col-span-full">
             <label className="label">Remarks / Notes</label>
-            <textarea className="input" rows={3} value={form.notes} onChange={e => set("notes", e.target.value)} style={{ resize: "vertical" }} />
+            <textarea className="input w-full p-3 bg-[var(--color-bg-primary)] border-[var(--color-border)] focus:bg-[var(--color-surface)]" rows={3} value={form.notes} onChange={e => set("notes", e.target.value)} style={{ resize: "vertical" }} />
           </div>
         </div>
-        <div style={{ marginTop: "1rem" }}>
-          <button className="btn-primary" onClick={save} disabled={saving}>
-            {saving ? "Saving…" : (editId ? "Update Record" : "Save Travel Record")}
-          </button>
-        </div>
+        {isAdmin ? (
+          <div className="mt-5">
+            <button className="btn-primary py-2.5 px-6 shadow-sm font-semibold" onClick={save} disabled={saving}>
+              {saving ? "Saving…" : (editId ? "Update Record" : "Save Travel Record")}
+            </button>
+          </div>
+        ) : (
+          <p className="mt-4 text-[0.85rem] font-medium text-[var(--color-danger)] flex items-center gap-1.5 bg-[var(--color-danger-light)] w-fit px-3 py-1.5 rounded-lg">
+            <Lock size={14} />
+            Read-only — only admins can add or edit travel records.
+          </p>
+        )}
       </div>
 
       {/* Bulk CSV upload */}
-      {showBulk && <BulkCsvUpload regs={regs} onDone={() => { mutate(); setShowBulk(false); }} />}
+      {showBulk && isAdmin && <BulkCsvUpload regs={regs} onDone={() => { mutate(); setShowBulk(false); }} />}
 
       {/* Stats pills */}
-      <div className="glass-card" style={{ padding: "1rem 1.25rem", marginBottom: "1.25rem", display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+      <div className="glass-card p-4 mb-6 flex gap-3 flex-wrap items-center">
         {[
           ["Total Records", records.length],
           ["Tickets Received", records.filter(r => isYes(r.ticket_received)).length],
           ["Invoices Received", records.filter(r => isYes(r.invoice_received)).length],
           ["Visa Received", records.filter(r => isYes(r.visa_received)).length],
         ].map(([l, v]) => (
-          <span key={l as string} className="badge badge-neutral" style={{ fontSize: "0.8125rem", padding: "0.375rem 0.75rem" }}>
-            {l}: <strong style={{ marginLeft: 4 }}>{v}</strong>
+          <span key={l as string} className="badge badge-neutral bg-[var(--color-border)]/50 text-xs px-3 py-1.5">
+            {l}: <strong className="ml-1 text-[var(--color-text-primary)]">{v}</strong>
           </span>
         ))}
       </div>
 
       {/* Records table */}
-      <div className="glass-card" style={{ padding: "1.25rem", marginBottom: "1.25rem" }}>
-        <h3 style={{ fontWeight: 600, marginBottom: "0.875rem" }}>Travel Records</h3>
-        <div style={{ border: "1px solid var(--color-border)", borderRadius: 12, overflow: "hidden" }}>
-          <div style={{ maxHeight: 480, overflowY: "auto" }}>
+      <div className="glass-card p-6 mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
+          <h3 className="text-[1.1rem] font-bold tracking-tight">Travel Records</h3>
+          <input
+            type="search"
+            className="input max-w-sm w-full py-2 bg-[var(--color-bg-primary)] border-[var(--color-border)] focus:bg-[var(--color-surface)] shadow-sm"
+            placeholder="Search name, country, company, Sr No, POC, flight, hotel…"
+            value={travelSearch}
+            onChange={e => setTravelSearch(e.target.value)}
+          />
+        </div>
+        <div className="border border-[var(--color-border)] rounded-xl overflow-hidden shadow-sm bg-[var(--color-surface)]">
+          <div className="max-h-[500px] overflow-y-auto custom-scrollbar">
             <table className="data-table">
               <thead><tr>
-                {["#","Sr","Name","Country","Company","Sector","POC","Status","Ticket","Invoice","Visa","Passport","Actions"].map(h => <th key={h}>{h}</th>)}
+                {["#","Sr","Name","Country","Company","Sector","POC","Status","Ticket","Invoice","Visa","Passport","Passport URL","Actions"].map(h => <th key={h}>{h}</th>)}
               </tr></thead>
               <tbody>
-                {records.length === 0 && <tr><td colSpan={13} style={{ textAlign: "center", padding: "2rem", color: "var(--color-text-tertiary)" }}>No travel records yet.</td></tr>}
-                {records.map((r, i) => (
+                {(() => {
+                  const q = travelSearch.trim().toLowerCase();
+                  const filtered = q
+                    ? records.filter(r =>
+                        [
+                          r.responses_sr_no, r.first_name, r.last_name, r.initial,
+                          r.country_name, r.company_name, r.poc, r.sector, r.status,
+                          r.hotel_name, r.room_no, r.participant_mobile,
+                          r.arrival_flight_no, r.departure_flight_no,
+                          r.arrival_to, r.departure_from,
+                        ].some(v => v?.toLowerCase().includes(q))
+                      )
+                    : records;
+
+                  if (filtered.length === 0) return (
+                    <tr><td colSpan={14} style={{ textAlign: "center", padding: "2rem", color: "var(--color-text-tertiary)" }}>
+                      {records.length === 0 ? "No travel records yet." : `No results for "${travelSearch}"`}
+                    </td></tr>
+                  );
+
+                  return filtered.map((r, i) => (
                   <tr key={r.id}>
                     <td style={{ color: "var(--color-text-tertiary)" }}>{i + 1}</td>
                     <td>{r.responses_sr_no}</td>
@@ -289,13 +349,27 @@ export default function TravelDeskPage() {
                       <td key={k}><span className={`badge ${isYes(r[k] as string) ? "badge-success" : "badge-neutral"}`}>{isYes(r[k] as string) ? "Yes" : "No"}</span></td>
                     ))}
                     <td>
+                      {r.passport_url ? (
+                        <a href={r.passport_url} target="_blank" rel="noreferrer"
+                          style={{ fontSize: "0.75rem", color: "var(--color-accent)", textDecoration: "none" }}
+                        ><Link size={12} /> View</a>
+                      ) : (
+                        <button className="btn-secondary" style={{ padding: "0.2rem 0.5rem", fontSize: "0.75rem" }}
+                          onClick={() => fetchPassportUrl(r.id)} title="Fetch from GAS sheet">
+                          <Link size={12} /> Fetch
+                        </button>
+                      )}
+                    </td>
+                    <td>
                       <div style={{ display: "flex", gap: "0.25rem" }}>
-                        <button className="btn-secondary" style={{ padding: "0.25rem" }} onClick={() => editRecord(r)}><Pencil size={13} /></button>
-                        <button className="btn-secondary" style={{ padding: "0.25rem", color: "var(--color-danger)" }} onClick={() => deleteRecord(r.id)}><Trash2 size={13} /></button>
+                        {isAdmin && <button className="btn-secondary" style={{ padding: "0.25rem" }} onClick={() => editRecord(r)}><Pencil size={13} /></button>}
+                        {isAdmin && <button className="btn-secondary" style={{ padding: "0.25rem", color: "var(--color-danger)" }} onClick={() => deleteRecord(r.id)}><Trash2 size={13} /></button>}
+                        {!isAdmin && <span style={{ fontSize: "0.75rem", color: "var(--color-text-tertiary)" }}>—</span>}
                       </div>
                     </td>
                   </tr>
-                ))}
+                  ));
+                })()}
               </tbody>
             </table>
           </div>
@@ -303,31 +377,35 @@ export default function TravelDeskPage() {
       </div>
 
       {/* Ticket Report */}
-      <div className="glass-card" style={{ padding: "1.25rem", marginBottom: "1.25rem" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
-          <h3 style={{ fontWeight: 600 }}>Till Date Ticket Report</h3>
-          <button className="btn-secondary" style={{ fontSize: "0.8125rem" }} onClick={async () => { await navigator.clipboard.writeText(ticketReport); toast.success("Copied"); }}>
-            <Copy size={13} /> Copy
+      <div className="glass-card p-6 mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-[1.1rem] font-bold tracking-tight">Till Date Ticket Report</h3>
+          <button className="btn-secondary py-1.5" onClick={async () => { await navigator.clipboard.writeText(ticketReport); toast.success("Copied"); }}>
+            <Copy size={14} /> Copy
           </button>
         </div>
-        <textarea readOnly value={ticketReport} rows={10} className="input mono" style={{ fontSize: "0.8125rem", lineHeight: 1.6 }} />
+        <textarea readOnly value={ticketReport} rows={8} className="input mono w-full p-3 bg-[var(--color-bg-primary)] border-[var(--color-border)] focus:bg-[var(--color-surface)] text-[0.8rem] leading-relaxed custom-scrollbar" />
       </div>
 
       {/* Pivot mini grids */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "1rem" }}>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {[
           { title: "Country-wise (Tickets)", rows: tCountry },
           { title: "Sector-wise (Tickets)", rows: tSector },
           { title: "POC-wise (Tickets)", rows: tPoc },
         ].map(({ title, rows: pr }) => (
-          <div key={title} className="glass-card" style={{ padding: "1rem" }}>
-            <h4 style={{ fontWeight: 600, fontSize: "0.875rem", marginBottom: "0.75rem" }}>{title}</h4>
-            {pr.slice(0, 10).map(({ label, count }) => (
-              <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "0.25rem 0", borderBottom: "1px solid var(--color-border)", fontSize: "0.8125rem" }}>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-                <span style={{ fontWeight: 600, color: "var(--color-accent)", flexShrink: 0, marginLeft: 8 }}>{count}</span>
-              </div>
-            ))}
+          <div key={title} className="glass-card p-5 bg-[var(--color-surface)] border-[var(--color-border)] rounded-2xl shadow-sm">
+            <h4 className="font-bold text-[0.95rem] mb-4 text-[var(--color-text-primary)] tracking-tight">{title}</h4>
+            <div className="flex flex-col gap-2.5">
+              {pr.slice(0, 10).map(({ label, count }) => (
+                <div key={label} className="group">
+                  <div className="flex justify-between items-end mb-1">
+                    <span className="text-[0.85rem] font-medium text-[var(--color-text-primary)] truncate max-w-[75%] transition-colors group-hover:text-[var(--color-accent)]">{label}</span>
+                    <span className="text-[0.85rem] font-bold text-[var(--color-text-secondary)] group-hover:text-[var(--color-accent)] transition-colors shrink-0">{count}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         ))}
       </div>
@@ -425,3 +503,152 @@ function BulkCsvUpload({ regs, onDone }: { regs: RegistrationRow[]; onDone: () =
     </div>
   );
 }
+
+// ─── Searchable Delegate Picker ───────────────────────────────────────────────
+function DelegateSearch({
+  regs,
+  value,
+  onSelect,
+}: {
+  regs: RegistrationRow[];
+  value: string;
+  onSelect: (id: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
+  const inputRef = useRef<HTMLInputElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Label shown when closed and a delegate is selected
+  const selected = regs.find((r) => String(r.id) === value);
+  const displayLabel = selected
+    ? `${selected.sr_no ?? ""}. ${[selected.first_name, selected.last_name].filter(Boolean).join(" ") || selected.company_name || "—"} | ${selected.country_name ?? ""}`
+    : "";
+
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return regs.slice(0, 100);
+    return regs.filter((r) =>
+      [String(r.sr_no ?? ""), r.first_name, r.last_name,
+        r.company_name, r.country_name, r.poc, r.participant_mobile]
+        .some((v) => v?.toLowerCase().includes(q))
+    ).slice(0, 100);
+  }, [regs, query]);
+
+  // Calculate position for the fixed dropdown
+  const openDropdown = () => {
+    if (inputRef.current) {
+      const rect = inputRef.current.getBoundingClientRect();
+      setDropPos({
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+      });
+    }
+    setOpen(true);
+    setQuery("");
+  };
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node;
+      const isInsideWrap = wrapRef.current?.contains(target);
+      const isInsideDropdown = document.getElementById("delegate-dropdown")?.contains(target);
+      if (!isInsideWrap && !isInsideDropdown) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const pick = (id: string) => {
+    onSelect(id);
+    setQuery("");
+    setOpen(false);
+  };
+
+  return (
+    <div ref={wrapRef} style={{ gridColumn: "span 2" }}>
+      <label className="label">Delegate (search by name / Sr No / company)</label>
+      <input
+        ref={inputRef}
+        className="input"
+        type="text"
+        placeholder="Type name, Sr No, company or country…"
+        value={open ? query : displayLabel}
+        onFocus={openDropdown}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+        style={{ width: "100%" }}
+        autoComplete="off"
+      />
+
+      {/* Fixed-position dropdown — escapes grid/overflow clipping */}
+      {open && typeof window !== "undefined" && (
+        <div
+          id="delegate-dropdown"
+          style={{
+            position: "fixed",
+            top: dropPos.top,
+            left: dropPos.left,
+            width: dropPos.width,
+            background: "var(--color-card, #1e1e2e)",
+            border: "1px solid var(--color-border)",
+            borderRadius: 10,
+            zIndex: 99999,
+            maxHeight: 280,
+            overflowY: "auto",
+            boxShadow: "0 12px 32px rgba(0,0,0,0.35)",
+          }}
+        >
+          {matches.length === 0 ? (
+            <div style={{ padding: "0.75rem 1rem", fontSize: "0.8125rem", color: "var(--color-text-tertiary)" }}>
+              No delegates found
+            </div>
+          ) : (
+            <>
+              {matches.map((r) => {
+                const name = [r.first_name, r.last_name].filter(Boolean).join(" ") || r.company_name || "—";
+                const isActive = String(r.id) === value;
+                return (
+                  <div
+                    key={r.id}
+                    onMouseDown={(e) => { e.preventDefault(); pick(String(r.id)); }}
+                    style={{
+                      padding: "0.5rem 0.875rem",
+                      cursor: "pointer",
+                      fontSize: "0.8125rem",
+                      background: isActive ? "var(--color-accent-light, #3b3b6e)" : "transparent",
+                      borderBottom: "1px solid var(--color-border)",
+                      display: "flex",
+                      gap: "0.625rem",
+                      alignItems: "center",
+                    }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "var(--color-hover, #2a2a3e)"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = isActive ? "var(--color-accent-light, #3b3b6e)" : "transparent"; }}
+                  >
+                    <span style={{ fontWeight: 700, color: "var(--color-accent)", minWidth: 32, flexShrink: 0, fontSize: "0.8125rem" }}>
+                      {r.sr_no ?? "—"}
+                    </span>
+                    <span style={{ color: "var(--color-text-primary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {name}
+                    </span>
+                    <span style={{ color: "var(--color-text-tertiary)", flexShrink: 0, fontSize: "0.75rem" }}>
+                      {r.country_name ?? ""}
+                    </span>
+                  </div>
+                );
+              })}
+              {regs.length > 100 && !query.trim() && (
+                <div style={{ padding: "0.5rem 1rem", fontSize: "0.75rem", color: "var(--color-text-tertiary)", textAlign: "center", borderTop: "1px solid var(--color-border)" }}>
+                  Showing 100 of {regs.length} — type to search all
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+

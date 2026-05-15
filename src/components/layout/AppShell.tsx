@@ -1,20 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { Session } from "next-auth";
 import {
-  Globe, Users, Plane, Settings, LogOut, ChevronRight,
-  LayoutDashboard, Menu, X,
+  Globe, Plane, Settings, LogOut, ChevronRight,
+  LayoutDashboard, Menu, X, Sun, Moon, MessageSquare
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { toast } from "sonner";
 
 const NAV_ITEMS = [
-  { href: "/", icon: <LayoutDashboard size={18} />, label: "CRM Home", desc: "KPIs & Analytics" },
-  { href: "/travel", icon: <Plane size={18} />, label: "Travel Desk", desc: "Flights, Hotels, Visas" },
-  { href: "/settings", icon: <Settings size={18} />, label: "Settings", desc: "Integration Config" },
+  { href: "/",        icon: <LayoutDashboard size={17} />, label: "CRM Home",   desc: "KPIs & Analytics", roles: ["admin", "supervisor"] },
+  { href: "/travel",  icon: <Plane size={17} />,           label: "Travel Desk", desc: "Flights, Hotels, Visas", roles: ["admin", "supervisor"] },
+  { href: "/chat",    icon: <MessageSquare size={17} />,   label: "Team Chat",   desc: "Enterprise Messaging", roles: ["admin", "supervisor", "user"] },
+  { href: "/settings",icon: <Settings size={17} />,        label: "Settings",    desc: "Integration Config", roles: ["admin"] },
 ];
 
 interface Props {
@@ -25,6 +25,41 @@ interface Props {
 export default function AppShell({ session, children }: Props) {
   const pathname = usePathname();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    if (typeof window === "undefined") return "light";
+    const saved = localStorage.getItem("theme");
+    if (saved === "dark" || saved === "light") return saved;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+
+    // Inactivity timeout of 10 minutes (600,000 ms)
+    let inactivityTimer: NodeJS.Timeout;
+    const resetTimer = () => {
+      clearTimeout(inactivityTimer);
+      inactivityTimer = setTimeout(() => {
+        signOut({ redirect: true, callbackUrl: "/login" });
+      }, 10 * 60 * 1000);
+    };
+
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+    events.forEach(e => document.addEventListener(e, resetTimer));
+    resetTimer();
+
+    return () => {
+      clearTimeout(inactivityTimer);
+      events.forEach(e => document.removeEventListener(e, resetTimer));
+    };
+  }, [theme]);
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    localStorage.setItem("theme", next);
+    document.documentElement.setAttribute("data-theme", next);
+  };
 
   const handleSignOut = async () => {
     await signOut({ redirect: true, callbackUrl: "/login" });
@@ -39,53 +74,32 @@ export default function AppShell({ session, children }: Props) {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
-      {/* ── Mobile overlay ────────────────────────────────────────────────────── */}
+      {/* ── Mobile overlay ──────────────────────────────────────────────────── */}
       {mobileSidebarOpen && (
         <div
           onClick={() => setMobileSidebarOpen(false)}
           style={{
             position: "fixed", inset: 0, zIndex: 40,
-            background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)",
+            background: "rgba(0,0,0,0.35)", backdropFilter: "blur(6px)",
           }}
         />
       )}
 
-      {/* ── Sidebar ───────────────────────────────────────────────────────────── */}
+      {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
       <aside
-        className="sidebar"
-        style={{
-          width: 260,
-          minWidth: 260,
-          display: "flex",
-          flexDirection: "column",
-          position: "fixed",
-          top: 0,
-          left: 0,
-          bottom: 0,
-          zIndex: 50,
-          transform: mobileSidebarOpen ? "translateX(0)" : undefined,
-          transition: "transform 0.25s ease",
-        }}
+        className={`sidebar fixed top-0 left-0 bottom-0 z-50 flex flex-col w-[252px] min-w-[252px] transition-transform duration-250 ease-in-out ${mobileSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
       >
-        {/* Sidebar header */}
-        <div style={{
-          padding: "1rem 1.25rem",
-          borderBottom: "1px solid var(--color-border)",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: "10px",
-              background: "linear-gradient(135deg, #0071e3 0%, #5856d6 100%)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              flexShrink: 0, boxShadow: "0 4px 12px rgba(0,113,227,0.3)",
-            }}>
+        {/* Logo */}
+        <div className="px-5 py-4 border-b border-[var(--color-border)]">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-[0_3px_10px_rgba(0,113,227,0.35)] bg-gradient-to-br from-[#0071e3] to-[#5856d6]">
               <Globe size={18} color="white" />
             </div>
             <div>
-              <div style={{ fontSize: "0.9375rem", fontWeight: 700, color: "var(--color-text-primary)", lineHeight: 1.2 }}>
+              <div className="text-[0.95rem] font-bold text-[var(--color-text-primary)] leading-tight tracking-tight">
                 DelegateConnect
               </div>
-              <div style={{ fontSize: "0.6875rem", color: "var(--color-text-secondary)" }}>
+              <div className="text-[0.7rem] text-[var(--color-text-tertiary)] tracking-wide uppercase font-semibold mt-0.5">
                 International CRM
               </div>
             </div>
@@ -93,116 +107,90 @@ export default function AppShell({ session, children }: Props) {
         </div>
 
         {/* Navigation */}
-        <nav style={{ flex: 1, padding: "0.75rem 0.75rem", overflowY: "auto" }}>
-          <div style={{ marginBottom: "0.25rem" }}>
-            <p style={{
-              fontSize: "0.6875rem", fontWeight: 600, letterSpacing: "0.06em",
-              textTransform: "uppercase", color: "var(--color-text-tertiary)",
-              padding: "0.375rem 0.625rem", marginBottom: "0.125rem",
-            }}>
-              Modules
-            </p>
-            {NAV_ITEMS.map(({ href, icon, label, desc }) => {
-              const isActive = pathname === href;
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  onClick={() => setMobileSidebarOpen(false)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: "0.625rem",
-                    padding: "0.5rem 0.75rem", borderRadius: "10px",
-                    marginBottom: "0.125rem",
-                    background: isActive ? "var(--color-accent-light)" : "transparent",
-                    color: isActive ? "var(--color-accent)" : "var(--color-text-secondary)",
-                    textDecoration: "none",
-                    transition: "all 0.15s ease",
-                    fontWeight: isActive ? 600 : 500,
-                    fontSize: "0.875rem",
-                  }}
-                >
-                  <span style={{ flexShrink: 0 }}>{icon}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: "0.875rem", fontWeight: isActive ? 600 : 500 }}>{label}</div>
-                    <div style={{ fontSize: "0.6875rem", color: "var(--color-text-tertiary)", lineHeight: 1.2 }}>{desc}</div>
-                  </div>
-                  {isActive && <ChevronRight size={14} />}
-                </Link>
-              );
-            })}
-          </div>
+        <nav className="flex-1 px-3 py-4 overflow-y-auto">
+          <p className="text-[0.65rem] font-bold tracking-widest uppercase text-[var(--color-text-tertiary)] px-3 pb-2">
+            Modules
+          </p>
+          {NAV_ITEMS.map(({ href, icon, label, desc, roles }) => {
+            const userRole = (session.user as { role?: string })?.role || "user";
+            if (!roles.includes(userRole)) return null;
+            const isActive = pathname === href;
+            return (
+              <Link
+                key={href}
+                href={href}
+                onClick={() => setMobileSidebarOpen(false)}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl mb-1 transition-all duration-150 ease-in-out no-underline ${isActive ? 'bg-[var(--color-accent-light)] text-[var(--color-accent)] font-semibold' : 'text-[var(--color-text-secondary)] font-medium hover:bg-[var(--color-bg-primary)] hover:text-[var(--color-text-primary)]'}`}
+              >
+                <span className={`shrink-0 transition-opacity ${isActive ? 'opacity-100' : 'opacity-70'}`}>{icon}</span>
+                <div className="flex-1 min-w-0">
+                  <div className={`text-[0.8125rem] tracking-tight ${isActive ? 'font-semibold' : 'font-medium'}`}>{label}</div>
+                  <div className="text-[0.65rem] text-[var(--color-text-tertiary)] leading-tight mt-[2px]">{desc}</div>
+                </div>
+                {isActive && <ChevronRight size={14} className="shrink-0 opacity-50" />}
+              </Link>
+            );
+          })}
         </nav>
 
-        {/* User footer */}
-        <div style={{
-          padding: "0.875rem 1rem",
-          borderTop: "1px solid var(--color-border)",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
-            <div style={{
-              width: 32, height: 32, borderRadius: "50%",
-              background: "linear-gradient(135deg, #0071e3, #5856d6)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: "0.75rem", fontWeight: 700, color: "white",
-              flexShrink: 0,
-            }}>
+        {/* Footer: theme toggle + user + sign out */}
+        <div className="p-4 border-t border-[var(--color-border)]">
+          {/* Theme toggle row */}
+          <div className="flex items-center justify-between py-1.5 mb-3">
+            <span className="text-xs font-medium text-[var(--color-text-tertiary)]">
+              {theme === "dark" ? "Dark Mode" : "Light Mode"}
+            </span>
+            <button
+              onClick={toggleTheme}
+              className="theme-toggle"
+              title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+              aria-label="Toggle theme"
+            >
+              {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+            </button>
+          </div>
+
+          {/* User row */}
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#0071e3] to-[#5856d6] flex items-center justify-center text-xs font-bold text-white shrink-0 shadow-sm">
               {userInitials}
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{
-                fontSize: "0.8125rem", fontWeight: 600,
-                color: "var(--color-text-primary)", overflow: "hidden",
-                textOverflow: "ellipsis", whiteSpace: "nowrap",
-              }}>
+            <div className="flex-1 min-w-0">
+              <div className="text-[0.85rem] font-semibold text-[var(--color-text-primary)] truncate">
                 {session.user?.name ?? "Staff"}
               </div>
-              <div style={{
-                fontSize: "0.6875rem", color: "var(--color-text-tertiary)",
-                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-              }}>
+              <div className="text-[0.7rem] text-[var(--color-text-tertiary)] truncate mt-0.5">
                 {session.user?.email}
               </div>
             </div>
             <button
               onClick={handleSignOut}
               title="Sign out"
-              style={{
-                background: "none", border: "none", cursor: "pointer",
-                color: "var(--color-text-tertiary)", padding: "0.25rem",
-                borderRadius: "6px", transition: "all 0.15s",
-              }}
+              className="p-1.5 rounded-lg text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-all flex items-center shrink-0"
             >
-              <LogOut size={15} />
+              <LogOut size={16} />
             </button>
           </div>
         </div>
       </aside>
 
-      {/* ── Main content ──────────────────────────────────────────────────────── */}
-      <div style={{ flex: 1, marginLeft: 260, display: "flex", flexDirection: "column", minWidth: 0 }}>
+      {/* ── Main content ────────────────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0 md:ml-[252px]">
         {/* Mobile topbar */}
-        <div style={{
-          display: "none",
-          padding: "0.75rem 1rem",
-          borderBottom: "1px solid var(--color-border)",
-          background: "var(--color-surface)",
-          backdropFilter: "blur(20px)",
-          position: "sticky", top: 0, zIndex: 30,
-        }}
-          className="mobile-topbar"
-        >
+        <div className="mobile-topbar md:hidden px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] backdrop-blur-xl sticky top-0 z-30 flex items-center justify-between">
           <button
             onClick={() => setMobileSidebarOpen(!mobileSidebarOpen)}
-            style={{
-              background: "none", border: "none", cursor: "pointer",
-              color: "var(--color-text-primary)", padding: "0.25rem",
-            }}
+            className="p-1.5 text-[var(--color-text-primary)] hover:bg-[var(--color-bg-primary)] rounded-lg transition-colors"
           >
             {mobileSidebarOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
+          <div className="font-semibold text-sm">DelegateConnect</div>
+          <button onClick={toggleTheme} className="theme-toggle" aria-label="Toggle theme">
+            {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+          </button>
         </div>
 
-        <main style={{ flex: 1, overflowY: "auto" }}>
+        <main className="flex-1 overflow-y-auto">
           {children}
         </main>
       </div>
@@ -211,8 +199,8 @@ export default function AppShell({ session, children }: Props) {
         @media (max-width: 768px) {
           aside { transform: translateX(-100%) !important; }
           aside.open { transform: translateX(0) !important; }
-          div[style*="marginLeft: 260"] { margin-left: 0 !important; }
-          .mobile-topbar { display: flex !important; align-items: center; }
+          div[style*="marginLeft: 252"] { margin-left: 0 !important; }
+          .mobile-topbar { display: flex !important; }
         }
       `}</style>
     </div>

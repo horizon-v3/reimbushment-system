@@ -5,8 +5,16 @@ import { travelRecords, appSettings, auditLog } from "@/db/schema";
 import { asc, sql } from "drizzle-orm";
 import { backupTravelRecordToSheet, exportSheetToExcel } from "@/lib/gas-client";
 import { eq } from "drizzle-orm";
+import type { Session } from "next-auth";
 
-// ─── GET /api/travel ───────────────────────────────────────────────────────────
+function isAdmin(session: Session | null): boolean {
+  if (!session) return false;
+  const role = (session.user as { role?: string }).role ?? "staff";
+  return role === "admin";
+}
+
+
+// GET /api/travel — any authenticated user may read
 export async function GET(request: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -27,17 +35,27 @@ export async function GET(request: Request) {
       .select({ count: sql<number>`count(*)` })
       .from(travelRecords);
 
-    return NextResponse.json({ rows, total: Number(count) });
+    // Drizzle returns camelCase keys — frontend expects snake_case
+    const toSnake = (obj: Record<string, unknown>) =>
+      Object.fromEntries(
+        Object.entries(obj).map(([k, v]) => [
+          k.replace(/([A-Z])/g, "_$1").toLowerCase(),
+          v,
+        ])
+      );
+
+    return NextResponse.json({ rows: rows.map(toSnake), total: Number(count) });
   } catch (err) {
     console.error("[GET /api/travel]", err);
     return NextResponse.json({ error: "Database error" }, { status: 500 });
   }
 }
 
-// ─── POST /api/travel ──────────────────────────────────────────────────────────
+// POST /api/travel — admin-only
 export async function POST(request: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isAdmin(session)) return NextResponse.json({ error: "Forbidden: admin access required" }, { status: 403 });
 
   try {
     const body = await request.json();
@@ -90,10 +108,11 @@ export async function POST(request: Request) {
   }
 }
 
-// ─── PUT /api/travel ───────────────────────────────────────────────────────────
+// PUT /api/travel — admin-only
 export async function PUT(request: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isAdmin(session)) return NextResponse.json({ error: "Forbidden: admin access required" }, { status: 403 });
 
   try {
     const body = await request.json();
@@ -125,10 +144,11 @@ export async function PUT(request: Request) {
   }
 }
 
-// ─── DELETE /api/travel ────────────────────────────────────────────────────────
+// DELETE /api/travel — admin-only
 export async function DELETE(request: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isAdmin(session)) return NextResponse.json({ error: "Forbidden: admin access required" }, { status: 403 });
 
   const url = new URL(request.url);
   const id = parseInt(url.searchParams.get("id") ?? "0");
@@ -151,53 +171,58 @@ export async function DELETE(request: Request) {
   }
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// Helpers
 function mapTravelRecord(r: Record<string, unknown>) {
+  const s = (k: string): string | null => {
+    const v = r[k];
+    if (v == null || v === "") return null;
+    return String(v);
+  };
   return {
     registrationId: r.registration_id ? parseInt(String(r.registration_id)) : null,
-    responsesSrNo: r.responses_sr_no as string | null,
-    roomNo: r.room_no as string | null,
-    hotelName: r.hotel_name as string | null,
-    initial: r.initial as string | null,
-    firstName: r.first_name as string | null,
-    lastName: r.last_name as string | null,
-    countryName: r.country_name as string | null,
-    countryCode: r.country_code as string | null,
-    participantMobile: r.participant_mobile as string | null,
-    checkInDate: (r.check_in_date as string | null) || null,
-    checkOutDate: (r.check_out_date as string | null) || null,
-    roomUnits: r.room_units as string | null,
-    arrivalDate: (r.arrival_date as string | null) || null,
-    arrivalFlightNo: r.arrival_flight_no as string | null,
-    arrivalTo: r.arrival_to as string | null,
-    arrivalTime: (r.arrival_time as string | null) || null,
-    departureDate: (r.departure_date as string | null) || null,
-    departureFlightNo: r.departure_flight_no as string | null,
-    departureFrom: r.departure_from as string | null,
-    departureTime: (r.departure_time as string | null) || null,
-    sector: r.sector as string | null,
-    companyName: r.company_name as string | null,
-    poc: r.poc as string | null,
-    status: (r.status as string | null) ?? "Pending",
-    reimbursement: (r.reimbursement as string | null) ?? "No",
-    notes: r.notes as string | null,
-    invoiceAmount: r.invoice_amount as string | null,
-    invoiceAmountUsd: r.invoice_amount_usd as string | null,
-    ticketReceived: (r.ticket_received as string | null) ?? "No",
-    invoiceReceived: (r.invoice_received as string | null) ?? "No",
-    visaReceived: (r.visa_received as string | null) ?? "No",
-    passportCopyReceived: (r.passport_copy_received as string | null) ?? "No",
-    voucherReceived: (r.voucher_received as string | null) ?? "No",
-    ticketUrl: r.ticket_url as string | null,
-    invoiceUrl: r.invoice_url as string | null,
-    visaUrl: r.visa_url as string | null,
-    passportUrl: r.passport_url as string | null,
-    voucherUrl: r.voucher_url as string | null,
-    ticketDriveId: r.ticket_drive_id as string | null,
-    invoiceDriveId: r.invoice_drive_id as string | null,
-    visaDriveId: r.visa_drive_id as string | null,
-    passportDriveId: r.passport_drive_id as string | null,
-    voucherDriveId: r.voucher_drive_id as string | null,
+    responsesSrNo: s("responses_sr_no"),
+    roomNo: s("room_no"),
+    hotelName: s("hotel_name"),
+    initial: s("initial"),
+    firstName: s("first_name"),
+    lastName: s("last_name"),
+    countryName: s("country_name"),
+    countryCode: s("country_code"),
+    participantMobile: s("participant_mobile"),
+    checkInDate: s("check_in_date"),
+    checkOutDate: s("check_out_date"),
+    roomUnits: s("room_units"),
+    arrivalDate: s("arrival_date"),
+    arrivalFlightNo: s("arrival_flight_no"),
+    arrivalTo: s("arrival_to"),
+    arrivalTime: s("arrival_time"),
+    departureDate: s("departure_date"),
+    departureFlightNo: s("departure_flight_no"),
+    departureFrom: s("departure_from"),
+    departureTime: s("departure_time"),
+    sector: s("sector"),
+    companyName: s("company_name"),
+    poc: s("poc"),
+    status: s("status") ?? "Pending",
+    reimbursement: s("reimbursement") ?? "No",
+    notes: s("notes"),
+    invoiceAmount: s("invoice_amount"),
+    invoiceAmountUsd: s("invoice_amount_usd"),
+    ticketReceived: s("ticket_received") ?? "No",
+    invoiceReceived: s("invoice_received") ?? "No",
+    visaReceived: s("visa_received") ?? "No",
+    passportCopyReceived: s("passport_copy_received") ?? "No",
+    voucherReceived: s("voucher_received") ?? "No",
+    ticketUrl: s("ticket_url"),
+    invoiceUrl: s("invoice_url"),
+    visaUrl: s("visa_url"),
+    passportUrl: s("passport_url"),
+    voucherUrl: s("voucher_url"),
+    ticketDriveId: s("ticket_drive_id"),
+    invoiceDriveId: s("invoice_drive_id"),
+    visaDriveId: s("visa_drive_id"),
+    passportDriveId: s("passport_drive_id"),
+    voucherDriveId: s("voucher_drive_id"),
   };
 }
 
