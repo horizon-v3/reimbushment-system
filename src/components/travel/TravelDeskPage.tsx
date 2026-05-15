@@ -2,7 +2,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { Download, Upload, Pencil, Trash2, RefreshCw, Copy, Lock, Link } from "lucide-react";
+import { Download, Upload, Pencil, Trash2, RefreshCw, Copy, Lock, Link, CheckCircle } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
   type RegistrationRow, type TravelRow,
