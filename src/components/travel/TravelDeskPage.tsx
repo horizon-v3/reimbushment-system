@@ -334,12 +334,7 @@ export default function TravelDeskPage({ isAdmin = false, isSupervisor = false }
               {saving ? "Saving…" : (editId ? "Update Record" : "Save Travel Record")}
             </button>
           </div>
-        ) : (
-          <p className="mt-4 text-[0.85rem] font-medium text-[var(--color-danger)] flex items-center gap-1.5 bg-[var(--color-danger-light)] w-fit px-3 py-1.5 rounded-lg">
-            <Lock size={14} />
-            Read-only — only admins and supervisors can add or edit travel records.
-          </p>
-        )}
+        ) : null}
       </div>
 
       {/* Bulk CSV upload */}

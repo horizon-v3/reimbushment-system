@@ -144,6 +144,14 @@ const migrations = [
     created_at  TIMESTAMP DEFAULT NOW()
   )`,
 
+  // Chat messages table
+  `CREATE TABLE IF NOT EXISTS chat_messages (
+    id          SERIAL PRIMARY KEY,
+    user_id     INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    message     TEXT NOT NULL,
+    created_at  TIMESTAMP DEFAULT NOW() NOT NULL
+  )`,
+
   // Default settings row
   `INSERT INTO app_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`,
 
