@@ -316,16 +316,29 @@ export default function TravelDeskPage({ isAdmin = false, isSupervisor = false }
           <SEL label="Visa Received" value={form.visa_received as string} onChange={v => set("visa_received", v)} opts={["Yes","No"]} />
           <SEL label="Passport Copy" value={form.passport_copy_received as string} onChange={v => set("passport_copy_received", v)} opts={["Yes","No"]} />
           <SEL label="Voucher Received" value={form.voucher_received as string} onChange={v => set("voucher_received", v)} opts={["Yes","No"]} />
-          {(["ticket","invoice","visa","passport","voucher","business_card","bl"] as (keyof FileMap)[]).map(k => (
+          {(["ticket","invoice","visa","passport","voucher","business_card","bl"] as (keyof FileMap)[]).map(k => {
+            const existingUrl = form[`${k}_url` as keyof FormState] as string;
+            return (
             <FLD key={k} label={`${k === "bl" ? "B/L" : k.replace("_"," ").replace(/\b\w/g,m=>m.toUpperCase())} File (Drive Upload)`}>
-              <div className="flex flex-col gap-1">
-                <input type="file" className="input" style={{ padding: "0.375rem" }} onChange={e => setFiles(f => ({ ...f, [k]: e.target.files?.[0] }))} />
-                {(k === "passport" && form.passport_url) && <a href={form.passport_url as string} target="_blank" rel="noreferrer" className="text-xs text-[var(--color-accent)] hover:underline mt-1 flex items-center gap-1"><Link size={12}/> View existing passport</a>}
-                {(k === "business_card" && form.business_card_url) && <a href={form.business_card_url as string} target="_blank" rel="noreferrer" className="text-xs text-[var(--color-accent)] hover:underline mt-1 flex items-center gap-1"><Link size={12}/> View existing business card</a>}
-                {(k === "bl" && form.bl_url) && <a href={form.bl_url as string} target="_blank" rel="noreferrer" className="text-xs text-[var(--color-accent)] hover:underline mt-1 flex items-center gap-1"><Link size={12}/> View existing B/L</a>}
+              <div className="flex flex-col gap-2">
+                {existingUrl ? (
+                  <div className="flex items-center justify-between p-2 border border-[var(--color-border)] rounded bg-[var(--color-surface)] shadow-sm">
+                    <a href={existingUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-[0.8rem] text-[var(--color-primary)] font-semibold hover:underline truncate">
+                       <Download size={14}/> Download Fetched File
+                    </a>
+                    <label className="btn-secondary py-1 px-2 text-[0.7rem] cursor-pointer whitespace-nowrap m-0">
+                      Upload New
+                      <input type="file" className="hidden" onChange={e => setFiles(f => ({ ...f, [k]: e.target.files?.[0] }))} />
+                    </label>
+                  </div>
+                ) : (
+                  <input type="file" className="input text-sm" style={{ padding: "0.375rem" }} onChange={e => setFiles(f => ({ ...f, [k]: e.target.files?.[0] }))} />
+                )}
+                {files[k] && <div className="text-xs text-[var(--color-success)] font-medium">New file selected: {files[k]!.name}</div>}
               </div>
             </FLD>
-          ))}
+            );
+          })}
           <div className="col-span-full">
             <label className="label">Remarks / Notes</label>
             <textarea className="input w-full p-3 bg-[var(--color-bg-primary)] border-[var(--color-border)] focus:bg-[var(--color-surface)]" rows={3} value={form.notes} onChange={e => set("notes", e.target.value)} style={{ resize: "vertical" }} />
