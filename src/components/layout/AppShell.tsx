@@ -11,8 +11,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const NAV_ITEMS = [
-  { href: "/",        icon: <LayoutDashboard size={17} />, label: "CRM Home",   desc: "KPIs & Analytics", roles: ["admin", "supervisor"] },
-  { href: "/travel",  icon: <Plane size={17} />,           label: "Travel Desk", desc: "Flights, Hotels, Visas", roles: ["admin", "supervisor"] },
+  { href: "/",        icon: <LayoutDashboard size={17} />, label: "CRM Home",   desc: "KPIs & Analytics", roles: ["admin"] },
+  { href: "/travel",  icon: <Plane size={17} />,           label: "Travel Desk", desc: "Flights, Hotels, Visas", roles: ["admin", "supervisor", "user"] },
   { href: "/chat",    icon: <MessageSquare size={17} />,   label: "Team Chat",   desc: "Enterprise Messaging", roles: ["admin", "supervisor", "user"] },
   { href: "/settings",icon: <Settings size={17} />,        label: "Settings",    desc: "Integration Config", roles: ["admin"] },
 ];

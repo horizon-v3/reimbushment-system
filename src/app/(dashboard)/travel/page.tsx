@@ -10,9 +10,7 @@ export const metadata = {
 export default async function Page() {
   const session = await auth();
   const role = (session?.user as { role?: string } | undefined)?.role ?? "user";
-  if (role === "user") {
-    redirect("/chat");
-  }
   const isAdmin = role === "admin";
-  return <TravelDeskPage isAdmin={isAdmin} />;
+  const isSupervisor = role === "supervisor";
+  return <TravelDeskPage isAdmin={isAdmin} isSupervisor={isSupervisor} />;
 }

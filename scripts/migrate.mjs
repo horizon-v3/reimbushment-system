@@ -101,6 +101,8 @@ const migrations = [
     notes                   TEXT,
     invoice_amount          TEXT,
     invoice_amount_usd      TEXT,
+    invoice_amount_local    TEXT,
+    invoice_currency        TEXT,
     ticket_received         TEXT DEFAULT 'No',
     invoice_received        TEXT DEFAULT 'No',
     visa_received           TEXT DEFAULT 'No',
@@ -146,7 +148,10 @@ const migrations = [
   `INSERT INTO app_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`,
 
   // Add unique constraint to sr_no for existing tables
-  `ALTER TABLE registrations ADD CONSTRAINT registrations_sr_no_key UNIQUE (sr_no)`
+  `ALTER TABLE registrations ADD CONSTRAINT registrations_sr_no_key UNIQUE (sr_no)`,
+
+  // Add new invoice fields for existing tables
+  `ALTER TABLE travel_records ADD COLUMN IF NOT EXISTS invoice_amount_local TEXT, ADD COLUMN IF NOT EXISTS invoice_currency TEXT`
 ];
 
 let success = 0;

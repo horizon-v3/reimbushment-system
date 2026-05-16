@@ -34,7 +34,7 @@ const EMPTY_FORM = {
   arrival_time: "", departure_date: "", departure_flight_no: "",
   departure_from: "Indira Gandhi International Airport(DEL)", departure_time: "",
   sector: "", company_name: "", poc: "", status: "Pending", reimbursement: "No",
-  notes: "", invoice_amount: "", invoice_amount_usd: "",
+  notes: "", invoice_amount: "", invoice_amount_usd: "", invoice_amount_local: "", invoice_currency: "",
   ticket_received: "No", invoice_received: "No", visa_received: "No",
   passport_copy_received: "No", voucher_received: "No",
   reimbursement_amount: "", bl: "",
@@ -43,7 +43,9 @@ const EMPTY_FORM = {
 type FormState = typeof EMPTY_FORM & { reimbursement_amount_verified?: boolean };
 type FileMap = { ticket?: File; invoice?: File; visa?: File; passport?: File; voucher?: File; business_card?: File };
 
-export default function TravelDeskPage({ isAdmin = false }: { isAdmin?: boolean }) {
+const CURRENCIES = ["USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "CNY", "SEK", "NZD", "AED", "AFN", "ALL", "AMD", "ANG", "AOA", "ARS", "BGN", "BHD", "BRL", "BSD", "BWP", "BYN", "CLP", "COP", "CRC", "CZK", "DKK", "DOP", "DZD", "EGP", "FJD", "GEL", "GHS", "HKD", "HRK", "HUF", "IDR", "ILS", "INR", "IQD", "JOD", "KES", "KHR", "KRW", "KWD", "KZT", "LAK", "LBP", "LKR", "MAD", "MDL", "MGA", "MKD", "MMK", "MNT", "MOP", "MUR", "MVR", "MWK", "MXN", "MYR", "MZN", "NAD", "NGN", "NOK", "NPR", "OMR", "PAB", "PEN", "PGK", "PHP", "PKR", "PLN", "PYG", "QAR", "RON", "RSD", "RUB", "RWF", "SAR", "SGD", "THB", "TND", "TRY", "TWD", "TZS", "UAH", "UGX", "UYU", "UZS", "VND", "XAF", "XOF", "ZAR", "ZMW"].sort();
+
+export default function TravelDeskPage({ isAdmin = false, isSupervisor = false }: { isAdmin?: boolean; isSupervisor?: boolean }) {
   const { data: regsData } = useSWR<{ rows: RegistrationRow[] }>("/api/registrations?limit=5000", fetcher);
   const { data: travData, mutate } = useSWR<{ rows: TravelRow[] }>("/api/travel?limit=5000", fetcher);
   const regs = useMemo(() => regsData?.rows ?? [], [regsData?.rows]);
@@ -99,6 +101,13 @@ export default function TravelDeskPage({ isAdmin = false }: { isAdmin?: boolean 
       }
     }
     
+    if (editId && isSupervisor && !isAdmin) {
+      const p = window.prompt('You are about to overwrite data. Type "CONFIRM" to proceed:');
+      if (p !== "CONFIRM") {
+        return toast.error("Overwrite cancelled. You must type CONFIRM to save.");
+      }
+    }
+
     setSaving(true);
     try {
       const urlMap: Record<string, string> = {};
@@ -148,6 +157,8 @@ export default function TravelDeskPage({ isAdmin = false }: { isAdmin?: boolean 
       status: r.status ?? "Pending", reimbursement: r.reimbursement ?? "No",
       notes: r.notes ?? "", invoice_amount: r.invoice_amount ?? "",
       invoice_amount_usd: r.invoice_amount_usd ?? "",
+      invoice_amount_local: r.invoice_amount_local ?? "",
+      invoice_currency: r.invoice_currency ?? "",
       ticket_received: r.ticket_received ?? "No", invoice_received: r.invoice_received ?? "No",
       visa_received: r.visa_received ?? "No", passport_copy_received: r.passport_copy_received ?? "No",
       voucher_received: r.voucher_received ?? "No",
@@ -162,7 +173,7 @@ export default function TravelDeskPage({ isAdmin = false }: { isAdmin?: boolean 
   };
 
   const deleteRecord = async (id: number) => {
-    if (!isAdmin) return toast.error("Admin access required");
+    if (!isAdmin) return toast.error("Admin access required to delete");
     if (!confirm("Delete this travel record?")) return;
     const res = await fetch(`/api/travel?id=${id}`, { method: "DELETE" });
     const d = await res.json();
@@ -229,14 +240,14 @@ export default function TravelDeskPage({ isAdmin = false }: { isAdmin?: boolean 
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
-          {isAdmin ? (
+          {isAdmin || isSupervisor ? (
             <>
-              <button className="btn-secondary py-2" onClick={() => setShowBulk(!showBulk)}><Upload size={14} /> Bulk CSV</button>
+              {isAdmin && <button className="btn-secondary py-2" onClick={() => setShowBulk(!showBulk)}><Upload size={14} /> Bulk CSV</button>}
               <button className="btn-primary py-2 shadow-sm" onClick={downloadXlsx}><Download size={14} /> Export XLSX</button>
             </>
           ) : (
-            <span title="Admin access required" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[0.8125rem] font-medium text-[var(--color-text-tertiary)] border border-[var(--color-border)] cursor-not-allowed bg-[var(--color-surface)]">
-              <Lock size={14} /> Admin Only
+            <span title="Admin or Supervisor access required" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[0.8125rem] font-medium text-[var(--color-text-tertiary)] border border-[var(--color-border)] cursor-not-allowed bg-[var(--color-surface)]">
+              <Lock size={14} /> Read Only
             </span>
           )}
           <button className="btn-secondary" onClick={() => mutate()}><RefreshCw size={14} /></button>
@@ -251,13 +262,24 @@ export default function TravelDeskPage({ isAdmin = false }: { isAdmin?: boolean 
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           <DelegateSearch regs={regs} value={form.registration_id} onSelect={onSelectDelegate} />
-          {(["responses_sr_no","initial","first_name","last_name","country_name","participant_mobile","country_code","company_name","sector","bl","poc","room_no","hotel_name","arrival_flight_no","arrival_to","departure_flight_no","departure_from","invoice_amount","invoice_amount_usd"] as (keyof FormState)[]).map(k => (
-            <FLD key={k} label={k.replace(/_/g," ").replace(/\b\w/g,m=>m.toUpperCase())}>
+          {(["responses_sr_no","initial","first_name","last_name","country_name","participant_mobile","country_code","company_name","sector","bl","poc","room_no","hotel_name","arrival_flight_no","arrival_to","departure_flight_no","departure_from","invoice_amount","invoice_amount_usd","invoice_amount_local"] as (keyof FormState)[]).map(k => (
+            <FLD key={k} label={
+              k === "invoice_amount" ? "Invoice Amount (INR)" : 
+              k === "invoice_amount_usd" ? "Invoice Amount (USD)" :
+              k === "invoice_amount_local" ? "Invoice Amount (Local)" :
+              k.replace(/_/g," ").replace(/\b\w/g,m=>m.toUpperCase())
+            }>
               <input className="input" value={form[k] as string}
                 readOnly={["responses_sr_no","initial","first_name","last_name","country_name","participant_mobile","company_name","sector","bl","poc"].includes(k)}
                 onChange={e => set(k, e.target.value as FormState[typeof k])} />
             </FLD>
           ))}
+          <FLD label="Invoice Currency">
+            <input className="input" list="currencies" value={form.invoice_currency as string} onChange={e => set("invoice_currency", e.target.value)} placeholder="Search or select..." />
+            <datalist id="currencies">
+              {CURRENCIES.map(c => <option key={c} value={c} />)}
+            </datalist>
+          </FLD>
           {(["check_in_date","check_out_date","arrival_date","departure_date"] as (keyof FormState)[]).map(k => (
             <FLD key={k} label={k.replace(/_/g," ").replace(/\b\w/g,m=>m.toUpperCase())}>
               <input type="date" className="input" value={form[k] as string} onChange={e => set(k, e.target.value)} />
@@ -306,7 +328,7 @@ export default function TravelDeskPage({ isAdmin = false }: { isAdmin?: boolean 
             <textarea className="input w-full p-3 bg-[var(--color-bg-primary)] border-[var(--color-border)] focus:bg-[var(--color-surface)]" rows={3} value={form.notes} onChange={e => set("notes", e.target.value)} style={{ resize: "vertical" }} />
           </div>
         </div>
-        {isAdmin ? (
+        {isAdmin || isSupervisor ? (
           <div className="mt-5">
             <button className="btn-primary py-2.5 px-6 shadow-sm font-semibold" onClick={save} disabled={saving}>
               {saving ? "Saving…" : (editId ? "Update Record" : "Save Travel Record")}
@@ -315,7 +337,7 @@ export default function TravelDeskPage({ isAdmin = false }: { isAdmin?: boolean 
         ) : (
           <p className="mt-4 text-[0.85rem] font-medium text-[var(--color-danger)] flex items-center gap-1.5 bg-[var(--color-danger-light)] w-fit px-3 py-1.5 rounded-lg">
             <Lock size={14} />
-            Read-only — only admins can add or edit travel records.
+            Read-only — only admins and supervisors can add or edit travel records.
           </p>
         )}
       </div>
@@ -353,7 +375,7 @@ export default function TravelDeskPage({ isAdmin = false }: { isAdmin?: boolean 
           <div className="max-h-[500px] overflow-y-auto custom-scrollbar">
             <table className="data-table">
               <thead><tr>
-                {["#","Sr","Name","Country","Company","Sector","POC","Status","Ticket","Invoice","Visa","Passport","Passport URL","Actions"].map(h => <th key={h}>{h}</th>)}
+                {["#","Sr","Name","Country","Company","Sector","B/L","POC","Status","Ticket","Invoice","Visa","Passport","Actions"].map(h => <th key={h}>{h}</th>)}
               </tr></thead>
               <tbody>
                 {(() => {
@@ -384,28 +406,39 @@ export default function TravelDeskPage({ isAdmin = false }: { isAdmin?: boolean 
                     <td>{r.country_name}</td>
                     <td style={{ maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.company_name}</td>
                     <td>{r.sector}</td>
+                    <td>{r.bl}</td>
                     <td>{r.poc}</td>
                     <td><span className={`badge ${r.status === "Confirmed" ? "badge-success" : r.status === "Cancelled" ? "badge-danger" : "badge-warning"}`}>{r.status}</span></td>
-                    {(["ticket_received","invoice_received","visa_received","passport_copy_received"] as (keyof TravelRow)[]).map(k => (
-                      <td key={k}><span className={`badge ${isYes(r[k] as string) ? "badge-success" : "badge-neutral"}`}>{isYes(r[k] as string) ? "Yes" : "No"}</span></td>
+                    {[
+                      { key: "ticket_received", urlKey: "ticket_url", name: "Ticket" },
+                      { key: "invoice_received", urlKey: "invoice_url", name: "Invoice" },
+                      { key: "visa_received", urlKey: "visa_url", name: "Visa" },
+                      { key: "passport_copy_received", urlKey: "passport_url", name: "Passport" }
+                    ].map(col => (
+                      <td key={col.key}>
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className={`badge ${isYes(r[col.key as keyof TravelRow] as string) ? "badge-success" : "badge-neutral"}`}>
+                            {isYes(r[col.key as keyof TravelRow] as string) ? "Yes" : "No"}
+                          </span>
+                          {r[col.urlKey as keyof TravelRow] && (
+                            <a href={r[col.urlKey as keyof TravelRow] as string} target="_blank" rel="noreferrer" className="text-[0.7rem] text-[var(--color-accent)] hover:underline flex items-center gap-1 mt-0.5">
+                              <Download size={10} /> Download
+                            </a>
+                          )}
+                          {!r[col.urlKey as keyof TravelRow] && col.name === "Passport" && (
+                            <button className="btn-secondary mt-0.5" style={{ padding: "0.15rem 0.35rem", fontSize: "0.65rem" }}
+                              onClick={() => fetchPassportUrl(r.id)} title="Auto-fetch from Google Sheet">
+                              <RefreshCw size={10} /> Auto-Fetch
+                            </button>
+                          )}
+                        </div>
+                      </td>
                     ))}
                     <td>
-                      {r.passport_url ? (
-                        <a href={r.passport_url} target="_blank" rel="noreferrer"
-                          style={{ fontSize: "0.75rem", color: "var(--color-accent)", textDecoration: "none" }}
-                        ><Link size={12} /> View</a>
-                      ) : (
-                        <button className="btn-secondary" style={{ padding: "0.2rem 0.5rem", fontSize: "0.75rem" }}
-                          onClick={() => fetchPassportUrl(r.id)} title="Fetch from GAS sheet">
-                          <Link size={12} /> Fetch
-                        </button>
-                      )}
-                    </td>
-                    <td>
                       <div style={{ display: "flex", gap: "0.25rem" }}>
-                        {isAdmin && <button className="btn-secondary" style={{ padding: "0.25rem" }} onClick={() => editRecord(r)}><Pencil size={13} /></button>}
+                        {(isAdmin || isSupervisor) && <button className="btn-secondary" style={{ padding: "0.25rem" }} onClick={() => editRecord(r)}><Pencil size={13} /></button>}
                         {isAdmin && <button className="btn-secondary" style={{ padding: "0.25rem", color: "var(--color-danger)" }} onClick={() => deleteRecord(r.id)}><Trash2 size={13} /></button>}
-                        {!isAdmin && <span style={{ fontSize: "0.75rem", color: "var(--color-text-tertiary)" }}>—</span>}
+                        {(!isAdmin && !isSupervisor) && <span style={{ fontSize: "0.75rem", color: "var(--color-text-tertiary)" }}>—</span>}
                       </div>
                     </td>
                   </tr>

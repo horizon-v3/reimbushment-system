@@ -108,6 +108,8 @@ export const travelRecords = pgTable("travel_records", {
   notes: text("notes"),
   invoiceAmount: text("invoice_amount"),
   invoiceAmountUsd: text("invoice_amount_usd"),
+  invoiceAmountLocal: text("invoice_amount_local"),
+  invoiceCurrency: text("invoice_currency"),
   ticketReceived: text("ticket_received").default("No"),
   invoiceReceived: text("invoice_received").default("No"),
   visaReceived: text("visa_received").default("No"),

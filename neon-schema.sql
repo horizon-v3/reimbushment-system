@@ -218,6 +218,8 @@ CREATE TABLE IF NOT EXISTS travel_records (
   reimbursement_amount   TEXT,              -- Specific monetary amount (Requires double-verification in UI)
   invoice_amount         TEXT,              -- Value in local currency
   invoice_amount_usd     TEXT,              -- Value converted to USD
+  invoice_amount_local   TEXT,              -- Local amount
+  invoice_currency       TEXT,              -- Chosen currency
   notes                  TEXT,              -- Internal logistic notes
   
   -- Document Collection Status Flags
@@ -421,7 +423,9 @@ ALTER TABLE travel_records
   ADD COLUMN IF NOT EXISTS reimbursement_amount     TEXT,
   ADD COLUMN IF NOT EXISTS bl                       TEXT,
   ADD COLUMN IF NOT EXISTS business_card_url        TEXT,
-  ADD COLUMN IF NOT EXISTS business_card_drive_id   TEXT;
+  ADD COLUMN IF NOT EXISTS business_card_drive_id   TEXT,
+  ADD COLUMN IF NOT EXISTS invoice_amount_local     TEXT,
+  ADD COLUMN IF NOT EXISTS invoice_currency         TEXT;
 
 -- ───────────────────────────────────────────────────────────────────────────────────
 -- END OF ENTERPRISE SCHEMA FILE

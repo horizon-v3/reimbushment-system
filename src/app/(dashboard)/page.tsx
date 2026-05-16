@@ -14,8 +14,8 @@ export const fetchCache = "force-no-store";
 export default async function Page() {
   const session = await auth();
   const role = (session?.user as { role?: string } | undefined)?.role ?? "user";
-  if (role === "user") {
-    redirect("/chat");
+  if (role === "user" || role === "supervisor") {
+    redirect("/travel");
   }
   const isAdmin = role === "admin";
   return <DashboardPage isAdmin={isAdmin} />;
