@@ -10,24 +10,28 @@ export type GasResponse<T = unknown> = {
   error?: string;
 } & T;
 
-async function getGasUrl(): Promise<string | null> {
-  if (GAS_URL) return GAS_URL;
+async function getGasSettings(): Promise<{ url: string | null; folderId: string | null; sheetId: string | null }> {
+  if (GAS_URL) return { url: GAS_URL, folderId: null, sheetId: null };
   try {
     const res = await fetch("/api/sync");
     const data = await res.json();
-    return data.gasWebAppUrl || null;
+    return { url: data.gasWebAppUrl || null, folderId: data.driveFolderId || null, sheetId: data.sheetId || null };
   } catch (err) {
-    return null;
+    return { url: null, folderId: null, sheetId: null };
   }
 }
 
 async function callGas<T = unknown>(body: Record<string, unknown>): Promise<GasResponse<T>> {
-  const targetUrl = await getGasUrl();
-  if (!targetUrl) {
+  const settings = await getGasSettings();
+  if (!settings.url) {
     return { ok: false, error: "GAS_WEB_APP_URL not configured in Env or Settings" } as GasResponse<T>;
   }
   try {
-    const res = await fetch(targetUrl, {
+    // Inject folderId into body if available and not explicitly provided
+    if (settings.folderId && !body.folderId) {
+      body.folderId = settings.folderId;
+    }
+    const res = await fetch(settings.url, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" }, // GAS quirk
       body: JSON.stringify(body),
@@ -40,12 +44,12 @@ async function callGas<T = unknown>(body: Record<string, unknown>): Promise<GasR
 }
 
 async function callGasGet<T = unknown>(params: Record<string, string>): Promise<GasResponse<T>> {
-  const targetUrl = await getGasUrl();
-  if (!targetUrl) {
+  const settings = await getGasSettings();
+  if (!settings.url) {
     return { ok: false, error: "GAS_WEB_APP_URL not configured in Env or Settings" } as GasResponse<T>;
   }
   try {
-    const url = new URL(targetUrl);
+    const url = new URL(settings.url);
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
     const res = await fetch(url.toString());
     const data = await res.json();
@@ -62,12 +66,31 @@ export async function uploadFileToDrive(
     delegateName?: string;
     subFolderName?: string;
     docType?: string;
+    srNo?: string | number;
   } = {}
-): Promise<GasResponse<{ fileId: string; fileName: string; webViewLink: string; downloadLink: string }>> {
+) {
   const base64Data = await fileToBase64(file);
   const safeName = sanitizeFileName(
     `${options.subFolderName || ""} ${options.delegateName || ""} ${options.docType || ""} - ${file.name}`
   );
+  
+  // Map docType (e.g. "ticket") to Sheet Column (e.g. "Ticket File")
+  let sheetColumn = "";
+  if (options.docType) {
+    const map: Record<string, string> = {
+      "ticket": "Ticket File",
+      "invoice": "Invoice File",
+      "visa": "Visa File",
+      "passport": "Passport File",
+      "voucher": "Voucher File",
+      "business_card": "Business Card File",
+      "bl": "B/L File"
+    };
+    sheetColumn = map[options.docType.toLowerCase()] || `${options.docType} File`;
+  }
+
+  const settings = await getGasSettings();
+
   return callGas({
     action: "uploadFile",
     fileName: safeName,
@@ -75,6 +98,9 @@ export async function uploadFileToDrive(
     base64Data,
     subFolderName: options.subFolderName,
     delegateName: options.delegateName,
+    sheetId: settings.sheetId,
+    sheetColumn: sheetColumn,
+    srNo: options.srNo
   });
 }
 

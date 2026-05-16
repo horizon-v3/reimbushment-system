@@ -85,14 +85,20 @@ export default function TravelDeskPage({ isAdmin = false, isSupervisor = false }
     const delegateName = `${form.responses_sr_no} ${form.first_name} ${form.last_name}`;
     toast.info(`Uploading ${docType}...`);
     const res = await uploadFileToDrive(file, {
-      delegateName, subFolderName: delegateName.trim() || "Delegates", docType,
+      delegateName, 
+      subFolderName: delegateName.trim() || "Delegates", 
+      docType,
+      srNo: form.responses_sr_no
     });
     if (!res.ok) {
       toast.error(`Failed to upload ${docType}: ${res.error}`);
       return null;
     }
     toast.success(`${docType} uploaded!`);
-    return { url: res.webViewLink, driveId: res.fileId };
+    
+    // Support both the old GAS script (returns 'url') and new GAS script (returns 'webViewLink')
+    const fileUrl = (res as any).url || res.webViewLink;
+    return { url: fileUrl, driveId: res.fileId };
   };
 
   const save = async () => {

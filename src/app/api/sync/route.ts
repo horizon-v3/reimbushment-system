@@ -140,6 +140,7 @@ export async function GET() {
     gasWebAppUrl: settings?.gasWebAppUrl ?? null,
     sheetId: settings?.registrationSheetId ?? null,
     sheetName: settings?.registrationSheetName ?? null,
+    driveFolderId: settings?.driveFolderId ?? null,
     dbCount: Number(count),
     lastSettingsUpdate: settings?.updatedAt ?? null,
   });
