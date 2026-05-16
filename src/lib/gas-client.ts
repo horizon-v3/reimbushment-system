@@ -68,7 +68,7 @@ export async function uploadFileToDrive(
     docType?: string;
     srNo?: string | number;
   } = {}
-) {
+): Promise<GasResponse<{ fileId: string; fileName: string; webViewLink?: string; url?: string; downloadLink?: string }>> {
   const base64Data = await fileToBase64(file);
   const safeName = sanitizeFileName(
     `${options.subFolderName || ""} ${options.delegateName || ""} ${options.docType || ""} - ${file.name}`

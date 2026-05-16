@@ -92,7 +92,7 @@ export default function ChatPage({
           docType: "chat_attachment"
         });
         if (res.ok) {
-          uploadedUrl = res.webViewLink;
+          uploadedUrl = res.url || res.webViewLink || null;
           uploadedName = file.name;
         } else {
           toast.error("Failed to upload attachment");
