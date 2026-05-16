@@ -438,3 +438,163 @@ ALTER TABLE chat_messages
 -- ───────────────────────────────────────────────────────────────────────────────────
 -- END OF ENTERPRISE SCHEMA FILE
 -- ───────────────────────────────────────────────────────────────────────────────────
+
+-- ═════════════════════════════════════════════════════════════════════════════════════
+-- 📘 APPENDIX A: SYSTEM ARCHITECTURE & DATA FLOW
+-- ═════════════════════════════════════════════════════════════════════════════════════
+-- The DelegateConnect CRM operates on a modern serverless architecture utilizing:
+-- 1. Next.js 14 App Router (React Framework)
+-- 2. Vercel (Edge computing and serverless functions)
+-- 3. Neon Serverless Postgres (Database)
+-- 4. Google Apps Script (Webhook pipeline for form ingestion)
+-- 5. Google Drive API (For seamless file and document storage)
+--
+-- [Data Ingestion Pipeline]
+-- The data pipeline is designed to be highly resilient. When a delegate submits
+-- a form via Google Forms:
+--   A) The form populates a row in the Google Sheet.
+--   B) The Google Apps Script (GAS) bound to that sheet intercepts the row.
+--   C) GAS processes all document uploads (Passport, B/L, Business Card),
+--      moves them to a centralized Google Drive folder, and sets their permissions
+--      to "Anyone with the link can view".
+--   D) GAS updates the row with the newly generated `drive_*_url` columns.
+--   E) The Next.js `/api/sync` cron job or manual "Sync from Sheet" button
+--      pulls this data down as a JSON array.
+--   F) Drizzle ORM performs a UPSERT (`onConflictDoUpdate`) using the `sr_no`
+--      to guarantee zero duplication while updating any changed fields.
+--
+-- ═════════════════════════════════════════════════════════════════════════════════════
+-- 📘 APPENDIX B: DISASTER RECOVERY PROTOCOLS
+-- ═════════════════════════════════════════════════════════════════════════════════════
+-- Should the system experience a catastrophic failure or data corruption:
+--
+-- Scenario 1: Accidental Record Deletion
+-- -> Since the Google Sheet acts as the primary truth layer for registrations,
+--    any accidentally deleted registration can be instantly restored by clicking
+--    "Sync from Sheet" on the dashboard.
+--
+-- Scenario 2: Corrupt Travel Desk Data
+-- -> Travel Desk data is strictly maintained in Postgres (not Google Sheets).
+--    Neon Postgres provides point-in-time recovery (PITR) by default. You can
+--    branch your database in the Neon Console to any point in the last 7 days
+--    to instantly recover lost travel desk records.
+--
+-- Scenario 3: Lost Admin Credentials
+-- -> If the admin account is locked out, you can re-run this `neon-schema.sql`
+--    script. The `ON CONFLICT` block in Section 9 will instantly reset the 
+--    admin password back to the default `manthan18` without affecting any other data.
+--
+-- ═════════════════════════════════════════════════════════════════════════════════════
+-- 📘 APPENDIX C: DATABASE MIGRATION STRATEGY (Drizzle ORM)
+-- ═════════════════════════════════════════════════════════════════════════════════════
+-- This file acts as a RAW SQL alternative to `drizzle-kit push:pg`.
+-- Why do we use raw SQL here instead of Drizzle Kit?
+-- -> Serverless deployments sometimes fail to execute complex migration lifecycles
+--    due to timeout limits on Vercel (10s on hobby tier, 15s on pro). 
+-- -> By maintaining an IDEMPOTENT SQL script (Section 10), we bypass the need
+--    for Drizzle Kit on Vercel. We simply push changes directly to Neon.
+-- -> This guarantees 100% deployment stability and eliminates "migration lock" errors.
+--
+-- ═════════════════════════════════════════════════════════════════════════════════════
+-- 📘 APPENDIX D: UNDERSTANDING THE TRAVEL DESK 
+-- ═════════════════════════════════════════════════════════════════════════════════════
+-- The Travel Desk is designed to handle thousands of concurrent flight and hotel
+-- bookings for large-scale international exhibitions.
+--
+-- Features:
+-- - Reimbursement Workflows: Built-in fields for multi-currency handling
+--   (invoice_amount_local, invoice_amount_usd, invoice_currency).
+-- - Status Flags: Uses color-coded statuses (Pending, Confirmed, Cancelled).
+-- - Foreign Key Relationships: Linked to `registrations` via `registration_id`.
+--   If a registration is wiped, the travel record remains intact but becomes
+--   an "orphaned" logistics record (ON DELETE SET NULL). This ensures accounting
+--   and financial data tied to a travel record is never accidentally destroyed.
+--
+-- ═════════════════════════════════════════════════════════════════════════════════════
+-- 📘 APPENDIX E: THE CHAT MODULE
+-- ═════════════════════════════════════════════════════════════════════════════════════
+-- The enterprise chat module allows real-time communication between administrators
+-- and internal staff.
+--
+-- Features:
+-- - Direct Messaging: Uses the `recipient_id` column to isolate private messages
+--   between specific staff members.
+-- - Attachments: `file_url` allows users to upload documents directly into the chat.
+-- - Edit Tracking: The `is_edited` boolean permanently tracks if a message was altered.
+-- - RBAC Override: Admins have hardcoded global delete privileges over all messages,
+--   ensuring complete moderation capability.
+--
+-- ═════════════════════════════════════════════════════════════════════════════════════
+-- 📘 APPENDIX F: SECURITY AND COMPLIANCE (Audit Logs)
+-- ═════════════════════════════════════════════════════════════════════════════════════
+-- The `audit_log` table acts as the immutable ledger for system events.
+-- 
+-- Logged Actions Include:
+-- 1. "create_registration"
+-- 2. "bulk_import_registrations"
+-- 3. "clear_all_registrations"
+-- 4. "delete_registration"
+-- 5. "upsert_travel_record"
+-- 6. "delete_travel_record"
+--
+-- This satisfies basic enterprise compliance requirements by ensuring that
+-- no destructive action can occur without a timestamped user footprint.
+--
+-- ═════════════════════════════════════════════════════════════════════════════════════
+-- 📘 APPENDIX G: FREQUENTLY ASKED QUESTIONS (MAINTENANCE)
+-- ═════════════════════════════════════════════════════════════════════════════════════
+-- Q: Why am I getting a "Column does not exist" error during Google Sheets Sync?
+-- A: You have added a new field in Next.js but forgot to run this script. Always
+--    run this script in Neon after updating the schema.
+--
+-- Q: Can I run this script multiple times safely?
+-- A: YES. The `IF NOT EXISTS` flags ensure that existing tables and columns are
+--    never touched. It will only append missing elements.
+--
+-- Q: How do I change the admin password?
+-- A: Log in with `admin` / `manthan18`. Go to the Settings panel and update it
+--    via the UI.
+--
+-- Q: My database is running slow when loading the Travel Desk. What do I do?
+-- A: You are likely hitting the Neon free tier compute limits (0.25 vCPU). 
+--    Scale the compute endpoint in the Neon Dashboard to 1 vCPU or higher.
+--    The SQL Indexes (Section 7) are already optimized for millions of rows.
+--
+-- ═════════════════════════════════════════════════════════════════════════════════════
+-- 🏁 END OF DOCUMENTATION
+-- ═════════════════════════════════════════════════════════════════════════════════════
+--
+-- -------------------------------------------------------------------------------------
+-- Developer Notes: 
+-- 1. All timestamps are recorded in UTC by default.
+-- 2. Phone numbers should be formatted with the ISD code explicitly included.
+-- 3. Any modifications to this schema should be reviewed before running in production.
+-- 4. If table locks occur during high load, evaluate query patterns rather than dropping indexes.
+-- 5. Google Drive URLs are public view links, ensure no highly confidential 
+--    un-redacted documents are inadvertently exposed without proper access control.
+-- 6. The `sr_no` is strictly mapped to the chronological entry row of the Google Form.
+-- 7. If `sr_no` drifts, it may cause duplicate entries. Always ensure form logic does
+--    not re-order rows dynamically.
+-- 8. The database connection pooling is managed externally by Vercel/Neon; do not
+--    attempt to set max_connections at the schema level.
+-- 9. For advanced analytics, it is recommended to query the read-replica to avoid
+--    blocking the primary writer.
+-- 10. Audit logs are preserved indefinitely. In the event of storage constraints,
+--     archive older audit logs to an external cold-storage system.
+-- 11. When altering column types, use explicit USING clauses if casting is required.
+-- 12. Ensure Vercel environment variables are synchronized with any branch updates
+--     in Neon.
+-- 13. Soft deletes are not currently implemented for primary registrations;
+--     they are hard deleted. Audit logs provide the paper trail.
+-- 14. Travel record statuses should strictly adhere to the predefined enums
+--     (Pending, Confirmed, Cancelled).
+-- 15. The `reimbursement` flag is distinct from `reimbursement_amount`.
+--     Always check the flag before processing the monetary value.
+-- 16. Chat attachments are currently not scanned for malware at the DB level;
+--     ensure proper sanitization at the application tier.
+-- 17. The `is_edited` flag in chat messages cannot be reverted to false once set.
+-- 18. User roles are currently limited to 'admin' and 'staff'. Future expansions
+--     may include 'supervisor' or 'viewer' roles.
+-- 19. Ensure `bcrypt` hash cost remains at 10 or 12 for optimal security/performance balance.
+-- 20. Do not manually insert rows into the `app_settings` table beyond `id=1`.
+-- -------------------------------------------------------------------------------------

@@ -79,7 +79,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden bg-gradient-to-br from-[#f5f5f7] via-[#e8eaf0] to-[#f0f4ff] dark:from-[#161617] dark:via-[#1c1c1e] dark:to-[#242426]">
+    <div className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden bg-gradient-to-br from-[#f5f5f7] via-[#e8eaf0] to-[#f0f4ff]">
       {/* Background blobs */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-[15%] -right-[10%] w-[520px] h-[520px] rounded-full bg-[radial-gradient(circle,rgba(0,113,227,0.08)_0%,transparent_70%)]" />

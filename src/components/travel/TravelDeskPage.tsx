@@ -420,10 +420,10 @@ export default function TravelDeskPage({ isAdmin = false, isSupervisor = false }
                     <td>
                       {r.bl_url ? (
                         <a href={r.bl_url as string} target="_blank" rel="noreferrer" className="btn-secondary" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem", display: "inline-flex", gap: "0.25rem", alignItems: "center", textDecoration: "none" }}>
-                          <Download size={12} /> {r.bl && r.bl.length < 15 ? r.bl : "Download B/L"}
+                          <Download size={12} /> Download
                         </a>
                       ) : (
-                        r.bl || <span className="badge badge-neutral">No</span>
+                        <span className="text-xs">{r.bl || "No"}</span>
                       )}
                     </td>
                     <td>{r.poc}</td>

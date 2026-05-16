@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import type { Session } from "next-auth";
 import {
   Globe, Plane, Settings, LogOut, ChevronRight,
-  LayoutDashboard, Menu, X, Sun, Moon, MessageSquare
+  LayoutDashboard, Menu, X, MessageSquare
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import Link from "next/link";
@@ -25,15 +25,9 @@ interface Props {
 export default function AppShell({ session, children }: Props) {
   const pathname = usePathname();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">(() => {
-    if (typeof window === "undefined") return "light";
-    const saved = localStorage.getItem("theme");
-    if (saved === "dark" || saved === "light") return saved;
-    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  });
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
+    document.documentElement.setAttribute("data-theme", "light");
 
     // Inactivity timeout of 10 minutes (600,000 ms)
     let inactivityTimer: NodeJS.Timeout;
@@ -52,14 +46,7 @@ export default function AppShell({ session, children }: Props) {
       clearTimeout(inactivityTimer);
       events.forEach(e => document.removeEventListener(e, resetTimer));
     };
-  }, [theme]);
-
-  const toggleTheme = () => {
-    const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    localStorage.setItem("theme", next);
-    document.documentElement.setAttribute("data-theme", next);
-  };
+  }, []);
 
   const handleSignOut = async () => {
     await signOut({ redirect: true, callbackUrl: "/login" });
@@ -133,22 +120,8 @@ export default function AppShell({ session, children }: Props) {
           })}
         </nav>
 
-        {/* Footer: theme toggle + user + sign out */}
+        {/* Footer: user + sign out */}
         <div className="p-4 border-t border-[var(--color-border)]">
-          {/* Theme toggle row */}
-          <div className="flex items-center justify-between py-1.5 mb-3">
-            <span className="text-xs font-medium text-[var(--color-text-tertiary)]">
-              {theme === "dark" ? "Dark Mode" : "Light Mode"}
-            </span>
-            <button
-              onClick={toggleTheme}
-              className="theme-toggle"
-              title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-              aria-label="Toggle theme"
-            >
-              {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
-            </button>
-          </div>
 
           {/* User row */}
           <div className="flex items-center gap-3">
@@ -185,9 +158,6 @@ export default function AppShell({ session, children }: Props) {
             {mobileSidebarOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
           <div className="font-semibold text-sm">DelegateConnect</div>
-          <button onClick={toggleTheme} className="theme-toggle" aria-label="Toggle theme">
-            {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
-          </button>
         </div>
 
         <main className="flex-1 overflow-y-auto">

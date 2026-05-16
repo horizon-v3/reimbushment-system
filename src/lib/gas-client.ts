@@ -10,12 +10,24 @@ export type GasResponse<T = unknown> = {
   error?: string;
 } & T;
 
+async function getGasUrl(): Promise<string | null> {
+  if (GAS_URL) return GAS_URL;
+  try {
+    const res = await fetch("/api/sync");
+    const data = await res.json();
+    return data.gasWebAppUrl || null;
+  } catch (err) {
+    return null;
+  }
+}
+
 async function callGas<T = unknown>(body: Record<string, unknown>): Promise<GasResponse<T>> {
-  if (!GAS_URL) {
-    return { ok: false, error: "GAS_WEB_APP_URL not configured" } as GasResponse<T>;
+  const targetUrl = await getGasUrl();
+  if (!targetUrl) {
+    return { ok: false, error: "GAS_WEB_APP_URL not configured in Env or Settings" } as GasResponse<T>;
   }
   try {
-    const res = await fetch(GAS_URL, {
+    const res = await fetch(targetUrl, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" }, // GAS quirk
       body: JSON.stringify(body),
@@ -28,11 +40,12 @@ async function callGas<T = unknown>(body: Record<string, unknown>): Promise<GasR
 }
 
 async function callGasGet<T = unknown>(params: Record<string, string>): Promise<GasResponse<T>> {
-  if (!GAS_URL) {
-    return { ok: false, error: "GAS_WEB_APP_URL not configured" } as GasResponse<T>;
+  const targetUrl = await getGasUrl();
+  if (!targetUrl) {
+    return { ok: false, error: "GAS_WEB_APP_URL not configured in Env or Settings" } as GasResponse<T>;
   }
   try {
-    const url = new URL(GAS_URL);
+    const url = new URL(targetUrl);
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
     const res = await fetch(url.toString());
     const data = await res.json();
