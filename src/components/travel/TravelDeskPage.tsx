@@ -416,22 +416,13 @@ export default function TravelDeskPage({ isAdmin = false, isSupervisor = false }
                       { key: "passport_copy_received", urlKey: "passport_url", name: "Passport" }
                     ].map(col => (
                       <td key={col.key}>
-                        <div className="flex flex-col gap-1 items-start">
-                          <span className={`badge ${isYes(r[col.key as keyof TravelRow] as string) ? "badge-success" : "badge-neutral"}`}>
-                            {isYes(r[col.key as keyof TravelRow] as string) ? "Yes" : "No"}
-                          </span>
-                          {Boolean(r[col.urlKey as keyof TravelRow]) && (
-                            <a href={r[col.urlKey as keyof TravelRow] as string} target="_blank" rel="noreferrer" className="text-[0.7rem] text-[var(--color-accent)] hover:underline flex items-center gap-1 mt-0.5">
-                              <Download size={10} /> Download
+                          {Boolean(r[col.urlKey as keyof TravelRow]) ? (
+                            <a href={r[col.urlKey as keyof TravelRow] as string} target="_blank" rel="noreferrer" className="btn-secondary" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem", display: "inline-flex", gap: "0.25rem", alignItems: "center", textDecoration: "none" }}>
+                              <Download size={12} /> Download
                             </a>
+                          ) : (
+                            <span className="badge badge-neutral">No</span>
                           )}
-                          {!r[col.urlKey as keyof TravelRow] && col.name === "Passport" && (
-                            <button className="btn-secondary mt-0.5" style={{ padding: "0.15rem 0.35rem", fontSize: "0.65rem" }}
-                              onClick={() => fetchPassportUrl(r.id)} title="Auto-fetch from Google Sheet">
-                              <RefreshCw size={10} /> Auto-Fetch
-                            </button>
-                          )}
-                        </div>
                       </td>
                     ))}
                     <td>
