@@ -76,6 +76,8 @@ export type TravelRow = {
   notes: string | null;
   invoice_amount: string | null;
   invoice_amount_usd: string | null;
+  invoice_amount_local: string | null;
+  invoice_currency: string | null;
   ticket_received: string | null;
   invoice_received: string | null;
   visa_received: string | null;

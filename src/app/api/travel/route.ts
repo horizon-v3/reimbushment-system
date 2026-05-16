@@ -7,10 +7,10 @@ import { backupTravelRecordToSheet, exportSheetToExcel } from "@/lib/gas-client"
 import { eq } from "drizzle-orm";
 import type { Session } from "next-auth";
 
-function isAdmin(session: Session | null): boolean {
+function isAllowedToEdit(session: Session | null): boolean {
   if (!session) return false;
   const role = (session.user as { role?: string }).role ?? "staff";
-  return role === "admin";
+  return role === "admin" || role === "supervisor";
 }
 
 
@@ -55,7 +55,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isAdmin(session)) return NextResponse.json({ error: "Forbidden: admin access required" }, { status: 403 });
+  if (!isAllowedToEdit(session)) return NextResponse.json({ error: "Forbidden: admin or supervisor access required" }, { status: 403 });
 
   try {
     const body = await request.json();
@@ -112,7 +112,7 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isAdmin(session)) return NextResponse.json({ error: "Forbidden: admin access required" }, { status: 403 });
+  if (!isAllowedToEdit(session)) return NextResponse.json({ error: "Forbidden: admin or supervisor access required" }, { status: 403 });
 
   try {
     const body = await request.json();
@@ -148,7 +148,8 @@ export async function PUT(request: Request) {
 export async function DELETE(request: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isAdmin(session)) return NextResponse.json({ error: "Forbidden: admin access required" }, { status: 403 });
+  const role = (session.user as { role?: string }).role ?? "staff";
+  if (role !== "admin") return NextResponse.json({ error: "Forbidden: admin access required to delete" }, { status: 403 });
 
   const url = new URL(request.url);
   const id = parseInt(url.searchParams.get("id") ?? "0");
@@ -210,6 +211,8 @@ function mapTravelRecord(r: Record<string, unknown>) {
     notes: s("notes"),
     invoiceAmount: s("invoice_amount"),
     invoiceAmountUsd: s("invoice_amount_usd"),
+    invoiceAmountLocal: s("invoice_amount_local"),
+    invoiceCurrency: s("invoice_currency"),
     ticketReceived: s("ticket_received") ?? "No",
     invoiceReceived: s("invoice_received") ?? "No",
     visaReceived: s("visa_received") ?? "No",
