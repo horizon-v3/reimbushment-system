@@ -85,6 +85,7 @@ export type TravelRow = {
   voucher_received: string | null;
   reimbursement_amount: string | null;
   bl: string | null;
+  bl_url: string | null;
   ticket_url: string | null;
   invoice_url: string | null;
   visa_url: string | null;

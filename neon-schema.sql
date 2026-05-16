@@ -422,6 +422,7 @@ ALTER TABLE registrations
 ALTER TABLE travel_records
   ADD COLUMN IF NOT EXISTS reimbursement_amount     TEXT,
   ADD COLUMN IF NOT EXISTS bl                       TEXT,
+  ADD COLUMN IF NOT EXISTS bl_url                   TEXT,
   ADD COLUMN IF NOT EXISTS business_card_url        TEXT,
   ADD COLUMN IF NOT EXISTS business_card_drive_id   TEXT,
   ADD COLUMN IF NOT EXISTS invoice_amount_local     TEXT,

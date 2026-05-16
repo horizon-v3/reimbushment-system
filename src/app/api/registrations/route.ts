@@ -234,7 +234,7 @@ export async function POST(request: Request) {
 
       // Audit log — wrapped so it never breaks the main response
       db.insert(auditLog).values({
-        userId: parseInt(session.user?.id ?? "0"),
+        userId: session.user?.id === "admin" ? 1 : parseInt(session.user?.id || "0"),
         action: "create_registration",
         entityType: "registration",
         entityId: inserted.id,
@@ -299,7 +299,7 @@ export async function POST(request: Request) {
 
       // Audit log — wrapped so it never blocks the response
       db.insert(auditLog).values({
-        userId: parseInt(session.user?.id ?? "0"),
+        userId: session.user?.id === "admin" ? 1 : parseInt(session.user?.id || "0"),
         action: "bulk_import_registrations",
         entityType: "registration",
         metadata: { count: totalInserted, total: mapped.length },
@@ -336,7 +336,7 @@ export async function DELETE(request: Request) {
       await db.delete(registrations);
 
       await db.insert(auditLog).values({
-        userId: parseInt(session.user?.id ?? "0"),
+        userId: session.user?.id === "admin" ? 1 : parseInt(session.user?.id || "0"),
         action: "clear_all_registrations",
         entityType: "registration",
         metadata: { wipedAt: new Date().toISOString() },
@@ -358,7 +358,7 @@ export async function DELETE(request: Request) {
     await db.delete(registrations).where(eq(registrations.id, id));
 
     await db.insert(auditLog).values({
-      userId: parseInt(session.user?.id ?? "0"),
+      userId: session.user?.id === "admin" ? 1 : parseInt(session.user?.id || "0"),
       action: "delete_registration",
       entityType: "registration",
       entityId: id,

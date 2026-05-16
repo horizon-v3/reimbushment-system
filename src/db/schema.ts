@@ -118,6 +118,7 @@ export const travelRecords = pgTable("travel_records", {
   voucherReceived: text("voucher_received").default("No"),
   reimbursementAmount: text("reimbursement_amount"),
   bl: text("bl"),
+  blUrl: text("bl_url"),
   // Google Drive URLs
   ticketUrl: text("ticket_url"),
   invoiceUrl: text("invoice_url"),

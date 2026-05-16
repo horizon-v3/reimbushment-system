@@ -37,11 +37,11 @@ const EMPTY_FORM = {
   notes: "", invoice_amount: "", invoice_amount_usd: "", invoice_amount_local: "", invoice_currency: "",
   ticket_received: "No", invoice_received: "No", visa_received: "No",
   passport_copy_received: "No", voucher_received: "No",
-  reimbursement_amount: "", bl: "",
+  reimbursement_amount: "", bl: "", bl_url: "",
   passport_url: "", business_card_url: "",
 };
 type FormState = typeof EMPTY_FORM & { reimbursement_amount_verified?: boolean };
-type FileMap = { ticket?: File; invoice?: File; visa?: File; passport?: File; voucher?: File; business_card?: File };
+type FileMap = { ticket?: File; invoice?: File; visa?: File; passport?: File; voucher?: File; business_card?: File; bl?: File };
 
 const CURRENCIES = ["USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "CNY", "SEK", "NZD", "AED", "AFN", "ALL", "AMD", "ANG", "AOA", "ARS", "BGN", "BHD", "BRL", "BSD", "BWP", "BYN", "CLP", "COP", "CRC", "CZK", "DKK", "DOP", "DZD", "EGP", "FJD", "GEL", "GHS", "HKD", "HRK", "HUF", "IDR", "ILS", "INR", "IQD", "JOD", "KES", "KHR", "KRW", "KWD", "KZT", "LAK", "LBP", "LKR", "MAD", "MDL", "MGA", "MKD", "MMK", "MNT", "MOP", "MUR", "MVR", "MWK", "MXN", "MYR", "MZN", "NAD", "NGN", "NOK", "NPR", "OMR", "PAB", "PEN", "PGK", "PHP", "PKR", "PLN", "PYG", "QAR", "RON", "RSD", "RUB", "RWF", "SAR", "SGD", "THB", "TND", "TRY", "TWD", "TZS", "UAH", "UGX", "UYU", "UZS", "VND", "XAF", "XOF", "ZAR", "ZMW"].sort();
 
@@ -74,7 +74,8 @@ export default function TravelDeskPage({ isAdmin = false, isSupervisor = false }
       country_code: extractCountryCode(r.participant_mobile),
       sector: r.main_import_product_1 ?? "",
       company_name: r.company_name ?? "", poc: r.poc ?? "",
-      bl: r.bl_status ?? r.proof_upload ?? "",
+      bl: r.bl_status ?? "",
+      bl_url: r.drive_proof_url ?? r.proof_upload ?? "",
       passport_url: r.drive_passport_front_url ?? r.passport_front_copy ?? "",
       business_card_url: r.drive_business_card_url ?? r.business_card_upload ?? "",
     }));
@@ -103,7 +104,7 @@ export default function TravelDeskPage({ isAdmin = false, isSupervisor = false }
     
     if (editId && isSupervisor && !isAdmin) {
       const p = window.prompt('You are about to overwrite data. Type "CONFIRM" to proceed:');
-      if (p !== "CONFIRM") {
+      if (p?.trim().toUpperCase() !== "CONFIRM") {
         return toast.error("Overwrite cancelled. You must type CONFIRM to save.");
       }
     }
@@ -113,7 +114,7 @@ export default function TravelDeskPage({ isAdmin = false, isSupervisor = false }
       const urlMap: Record<string, string> = {};
       const fileEntries: [keyof FileMap, string][] = [
         ["ticket", "ticket"], ["invoice", "invoice"], ["visa", "visa"],
-        ["passport", "passport"], ["voucher", "voucher"], ["business_card", "business_card"],
+        ["passport", "passport"], ["voucher", "voucher"], ["business_card", "business_card"], ["bl", "bl"],
       ];
       for (const [key, docType] of fileEntries) {
         if (files[key]) {
@@ -164,6 +165,7 @@ export default function TravelDeskPage({ isAdmin = false, isSupervisor = false }
       voucher_received: r.voucher_received ?? "No",
       reimbursement_amount: r.reimbursement_amount ?? "",
       bl: r.bl ?? "",
+      bl_url: r.bl_url ?? "",
       passport_url: r.passport_url ?? "",
       business_card_url: r.business_card_url ?? "",
       reimbursement_amount_verified: false,
@@ -314,12 +316,13 @@ export default function TravelDeskPage({ isAdmin = false, isSupervisor = false }
           <SEL label="Visa Received" value={form.visa_received as string} onChange={v => set("visa_received", v)} opts={["Yes","No"]} />
           <SEL label="Passport Copy" value={form.passport_copy_received as string} onChange={v => set("passport_copy_received", v)} opts={["Yes","No"]} />
           <SEL label="Voucher Received" value={form.voucher_received as string} onChange={v => set("voucher_received", v)} opts={["Yes","No"]} />
-          {(["ticket","invoice","visa","passport","voucher","business_card"] as (keyof FileMap)[]).map(k => (
-            <FLD key={k} label={`${k.replace("_"," ").replace(/\b\w/g,m=>m.toUpperCase())} File (Drive Upload)`}>
+          {(["ticket","invoice","visa","passport","voucher","business_card","bl"] as (keyof FileMap)[]).map(k => (
+            <FLD key={k} label={`${k === "bl" ? "B/L" : k.replace("_"," ").replace(/\b\w/g,m=>m.toUpperCase())} File (Drive Upload)`}>
               <div className="flex flex-col gap-1">
                 <input type="file" className="input" style={{ padding: "0.375rem" }} onChange={e => setFiles(f => ({ ...f, [k]: e.target.files?.[0] }))} />
                 {(k === "passport" && form.passport_url) && <a href={form.passport_url as string} target="_blank" rel="noreferrer" className="text-xs text-[var(--color-accent)] hover:underline mt-1 flex items-center gap-1"><Link size={12}/> View existing passport</a>}
                 {(k === "business_card" && form.business_card_url) && <a href={form.business_card_url as string} target="_blank" rel="noreferrer" className="text-xs text-[var(--color-accent)] hover:underline mt-1 flex items-center gap-1"><Link size={12}/> View existing business card</a>}
+                {(k === "bl" && form.bl_url) && <a href={form.bl_url as string} target="_blank" rel="noreferrer" className="text-xs text-[var(--color-accent)] hover:underline mt-1 flex items-center gap-1"><Link size={12}/> View existing B/L</a>}
               </div>
             </FLD>
           ))}
@@ -370,7 +373,7 @@ export default function TravelDeskPage({ isAdmin = false, isSupervisor = false }
           <div className="max-h-[500px] overflow-y-auto custom-scrollbar">
             <table className="data-table">
               <thead><tr>
-                {["#","Sr","Name","Country","Company","Sector","B/L","POC","Status","Ticket","Invoice","Visa","Passport","Actions"].map(h => <th key={h}>{h}</th>)}
+                {["#","Sr","Name","Country","Company","Sector","B/L","POC","Status","Ticket","Invoice","Visa","Passport","Voucher","B.Card","Actions"].map(h => <th key={h} style={{ textTransform: "uppercase" }}>{h}</th>)}
               </tr></thead>
               <tbody>
                 {(() => {
@@ -401,14 +404,24 @@ export default function TravelDeskPage({ isAdmin = false, isSupervisor = false }
                     <td>{r.country_name}</td>
                     <td style={{ maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.company_name}</td>
                     <td>{r.sector}</td>
-                    <td>{r.bl}</td>
+                    <td>
+                      {r.bl_url ? (
+                        <a href={r.bl_url as string} target="_blank" rel="noreferrer" className="btn-secondary" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem", display: "inline-flex", gap: "0.25rem", alignItems: "center", textDecoration: "none" }}>
+                          <Download size={12} /> {r.bl && r.bl.length < 15 ? r.bl : "Download B/L"}
+                        </a>
+                      ) : (
+                        r.bl || <span className="badge badge-neutral">No</span>
+                      )}
+                    </td>
                     <td>{r.poc}</td>
                     <td><span className={`badge ${r.status === "Confirmed" ? "badge-success" : r.status === "Cancelled" ? "badge-danger" : "badge-warning"}`}>{r.status}</span></td>
                     {[
                       { key: "ticket_received", urlKey: "ticket_url", name: "Ticket" },
                       { key: "invoice_received", urlKey: "invoice_url", name: "Invoice" },
                       { key: "visa_received", urlKey: "visa_url", name: "Visa" },
-                      { key: "passport_copy_received", urlKey: "passport_url", name: "Passport" }
+                      { key: "passport_copy_received", urlKey: "passport_url", name: "Passport" },
+                      { key: "voucher_received", urlKey: "voucher_url", name: "Voucher" },
+                      { key: "business_card_url", urlKey: "business_card_url", name: "Business Card" }
                     ].map(col => (
                       <td key={col.key}>
                           {Boolean(r[col.urlKey as keyof TravelRow]) ? (

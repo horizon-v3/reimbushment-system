@@ -165,8 +165,11 @@ const migrations = [
   // Add unique constraint to sr_no for existing tables
   `ALTER TABLE registrations ADD CONSTRAINT registrations_sr_no_key UNIQUE (sr_no)`,
 
-  // Add new invoice fields for existing tables
-  `ALTER TABLE travel_records ADD COLUMN IF NOT EXISTS invoice_amount_local TEXT, ADD COLUMN IF NOT EXISTS invoice_currency TEXT`
+  // Add new fields for existing tables
+  `ALTER TABLE travel_records 
+    ADD COLUMN IF NOT EXISTS invoice_amount_local TEXT, 
+    ADD COLUMN IF NOT EXISTS invoice_currency TEXT,
+    ADD COLUMN IF NOT EXISTS bl_url TEXT`
 ];
 
 let success = 0;

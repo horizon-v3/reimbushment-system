@@ -75,7 +75,7 @@ export async function POST(request: Request) {
       triggerTravelGasBackup(inserted, settings).catch(console.error);
 
       await db.insert(auditLog).values({
-        userId: parseInt(session.user?.id ?? "0"),
+        userId: session.user?.id === "admin" ? 1 : parseInt(session.user?.id || "0"),
         action: "create_travel_record",
         entityType: "travel_record",
         entityId: inserted.id,
@@ -91,7 +91,7 @@ export async function POST(request: Request) {
       inserted.forEach((r) => triggerTravelGasBackup(r, settings).catch(console.error));
 
       await db.insert(auditLog).values({
-        userId: parseInt(session.user?.id ?? "0"),
+        userId: session.user?.id === "admin" ? 1 : parseInt(session.user?.id || "0"),
         action: "bulk_import_travel_records",
         entityType: "travel_record",
         metadata: { count: inserted.length },
@@ -130,7 +130,7 @@ export async function PUT(request: Request) {
     triggerTravelGasBackup(updated, settings).catch(console.error);
 
     await db.insert(auditLog).values({
-      userId: parseInt(session.user?.id ?? "0"),
+      userId: session.user?.id === "admin" ? 1 : parseInt(session.user?.id || "0"),
       action: "update_travel_record",
       entityType: "travel_record",
       entityId: id,
@@ -159,7 +159,7 @@ export async function DELETE(request: Request) {
     await db.delete(travelRecords).where(eq(travelRecords.id, id));
 
     await db.insert(auditLog).values({
-      userId: parseInt(session.user?.id ?? "0"),
+      userId: session.user?.id === "admin" ? 1 : parseInt(session.user?.id || "0"),
       action: "delete_travel_record",
       entityType: "travel_record",
       entityId: id,
@@ -208,6 +208,7 @@ function mapTravelRecord(r: Record<string, unknown>) {
     reimbursement: s("reimbursement") ?? "No",
     reimbursementAmount: s("reimbursement_amount"),
     bl: s("bl"),
+    blUrl: s("bl_url"),
     notes: s("notes"),
     invoiceAmount: s("invoice_amount"),
     invoiceAmountUsd: s("invoice_amount_usd"),
