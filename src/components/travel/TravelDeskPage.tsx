@@ -420,7 +420,7 @@ export default function TravelDeskPage({ isAdmin = false, isSupervisor = false }
                           <span className={`badge ${isYes(r[col.key as keyof TravelRow] as string) ? "badge-success" : "badge-neutral"}`}>
                             {isYes(r[col.key as keyof TravelRow] as string) ? "Yes" : "No"}
                           </span>
-                          {r[col.urlKey as keyof TravelRow] && (
+                          {Boolean(r[col.urlKey as keyof TravelRow]) && (
                             <a href={r[col.urlKey as keyof TravelRow] as string} target="_blank" rel="noreferrer" className="text-[0.7rem] text-[var(--color-accent)] hover:underline flex items-center gap-1 mt-0.5">
                               <Download size={10} /> Download
                             </a>
