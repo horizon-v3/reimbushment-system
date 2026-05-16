@@ -8,6 +8,7 @@ import {
   date,
   time,
   jsonb,
+  boolean,
 } from "drizzle-orm/pg-core";
 
 // ─── Users ───────────────────────────────────────────────────────────────────
@@ -161,7 +162,11 @@ export const auditLog = pgTable("audit_log", {
 export const chatMessages = pgTable("chat_messages", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
+  recipientId: integer("recipient_id").references(() => users.id, { onDelete: "cascade" }),
   message: text("message").notNull(),
+  fileUrl: text("file_url"),
+  fileName: text("file_name"),
+  isEdited: boolean("is_edited").default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

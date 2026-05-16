@@ -427,6 +427,13 @@ ALTER TABLE travel_records
   ADD COLUMN IF NOT EXISTS invoice_amount_local     TEXT,
   ADD COLUMN IF NOT EXISTS invoice_currency         TEXT;
 
+-- 10C. Ensure chat message columns exist
+ALTER TABLE chat_messages
+  ADD COLUMN IF NOT EXISTS recipient_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS file_url TEXT,
+  ADD COLUMN IF NOT EXISTS file_name TEXT,
+  ADD COLUMN IF NOT EXISTS is_edited BOOLEAN DEFAULT false;
+
 -- ───────────────────────────────────────────────────────────────────────────────────
 -- END OF ENTERPRISE SCHEMA FILE
 -- ───────────────────────────────────────────────────────────────────────────────────

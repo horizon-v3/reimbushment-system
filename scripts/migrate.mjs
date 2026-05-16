@@ -152,6 +152,13 @@ const migrations = [
     created_at  TIMESTAMP DEFAULT NOW() NOT NULL
   )`,
 
+  // Add new columns to chat_messages
+  `ALTER TABLE chat_messages 
+    ADD COLUMN IF NOT EXISTS recipient_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    ADD COLUMN IF NOT EXISTS file_url TEXT,
+    ADD COLUMN IF NOT EXISTS file_name TEXT,
+    ADD COLUMN IF NOT EXISTS is_edited BOOLEAN DEFAULT false`,
+
   // Default settings row
   `INSERT INTO app_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`,
 
