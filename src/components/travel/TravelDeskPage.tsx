@@ -83,10 +83,16 @@ export default function TravelDeskPage({ isAdmin = false, isSupervisor = false }
 
   const uploadFile = async (file: File, docType: string) => {
     const delegateName = `${form.responses_sr_no} ${form.first_name} ${form.last_name}`;
+    toast.info(`Uploading ${docType}...`);
     const res = await uploadFileToDrive(file, {
       delegateName, subFolderName: delegateName.trim() || "Delegates", docType,
     });
-    return res.ok ? { url: res.webViewLink, driveId: res.fileId } : null;
+    if (!res.ok) {
+      toast.error(`Failed to upload ${docType}: ${res.error}`);
+      return null;
+    }
+    toast.success(`${docType} uploaded!`);
+    return { url: res.webViewLink, driveId: res.fileId };
   };
 
   const save = async () => {
