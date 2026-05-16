@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { chatMessages, users } from "@/db/schema";
-import { asc, eq, sql } from "drizzle-orm";
+import { asc, eq, or, and, isNull } from "drizzle-orm";
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -34,11 +34,14 @@ export async function GET(request: Request) {
       // Direct messages between current user and recipient
       const rId = parseInt(recipientId);
       query = query.where(
-        sql`(chat_messages.user_id = ${currentUserId} AND chat_messages.recipient_id = ${rId}) OR (chat_messages.user_id = ${rId} AND chat_messages.recipient_id = ${currentUserId})`
+        or(
+          and(eq(chatMessages.userId, currentUserId), eq(chatMessages.recipientId, rId)),
+          and(eq(chatMessages.userId, rId), eq(chatMessages.recipientId, currentUserId))
+        )
       ) as any;
     } else {
       // Team chat (recipient_id IS NULL)
-      query = query.where(sql`chat_messages.recipient_id IS NULL`) as any;
+      query = query.where(isNull(chatMessages.recipientId)) as any;
     }
 
     const messages = await query.orderBy(asc(chatMessages.createdAt)).limit(500);
