@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS registrations (
   id                       SERIAL PRIMARY KEY,
   
   -- Core Identity
-  sr_no                    INTEGER,         -- Sequential ID from Google Forms (used for upserts)
+  sr_no                    INTEGER UNIQUE,  -- Sequential ID from Google Forms (used for upserts)
   timestamp_raw            TEXT,            -- Original submission time (DD/MM/YYYY HH:MM:SS)
   title                    TEXT,            -- Mr. / Ms. / Dr.
   first_name               TEXT,            -- Given name as per passport
@@ -377,7 +377,7 @@ ON CONFLICT (email) DO UPDATE
 
 -- 10A. Ensure all registration columns exist
 ALTER TABLE registrations
-  ADD COLUMN IF NOT EXISTS sr_no                    INTEGER,
+  ADD COLUMN IF NOT EXISTS sr_no                    INTEGER UNIQUE,
   ADD COLUMN IF NOT EXISTS timestamp_raw            TEXT,
   ADD COLUMN IF NOT EXISTS title                    TEXT,
   ADD COLUMN IF NOT EXISTS first_name               TEXT,

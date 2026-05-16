@@ -33,7 +33,7 @@ export const users = pgTable("users", {
 // Status | Flight & Hotel | Remarks | B/L Status | BB Invitation letter status
 export const registrations = pgTable("registrations", {
   id: serial("id").primaryKey(),
-  srNo: integer("sr_no"),
+  srNo: integer("sr_no").unique(),
   timestampRaw: text("timestamp_raw"),
   title: text("title"),
   firstName: text("first_name"),

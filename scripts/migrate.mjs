@@ -29,7 +29,7 @@ const migrations = [
   // Registrations table
   `CREATE TABLE IF NOT EXISTS registrations (
     id                      SERIAL PRIMARY KEY,
-    sr_no                   INTEGER,
+    sr_no                   INTEGER UNIQUE,
     timestamp_raw           TEXT,
     title                   TEXT,
     first_name              TEXT,
@@ -144,6 +144,9 @@ const migrations = [
 
   // Default settings row
   `INSERT INTO app_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`,
+
+  // Add unique constraint to sr_no for existing tables
+  `ALTER TABLE registrations ADD CONSTRAINT registrations_sr_no_key UNIQUE (sr_no)`
 ];
 
 let success = 0;
