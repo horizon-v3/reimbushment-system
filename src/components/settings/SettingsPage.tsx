@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
 import {
   Save, RefreshCw, ExternalLink, CheckCircle2, AlertCircle,
-  Plus, Shield, Pencil, Trash2, Eye, EyeOff, X, ChevronDown, Zap, Link2,
+  Plus, Shield, Pencil, Trash2, Eye, EyeOff, X, ChevronDown, Zap, Link2, Wifi,
 } from "lucide-react";
 import { pingGas } from "@/lib/gas-client";
 
@@ -145,6 +145,43 @@ export default function SettingsPage() {
   const [pingMsg, setPingMsg] = useState("");
   const [openSection, setOpenSection] = useState<string>("quicksetup");
 
+  // ── Connection verification state ─────────────────────────────────────────
+  type ConnStatus = { ok: boolean; message: string };
+  const [verifying, setVerifying] = useState(false);
+  const [connStatus, setConnStatus] = useState<{
+    gas: ConnStatus; sheet: ConnStatus; drive: ConnStatus;
+  } | null>(null);
+
+  const verifyConnections = useCallback(async (overrideSettings?: typeof settings) => {
+    const s = overrideSettings ?? settings;
+    if (!s.gas_web_app_url) {
+      toast.error("Enter the GAS Web App URL first");
+      return false;
+    }
+    setVerifying(true);
+    setConnStatus(null);
+    try {
+      const res = await fetch("/api/settings/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(s),
+      });
+      const data = await res.json();
+      setConnStatus(data.results);
+      if (data.ok) {
+        toast.success("✅ All systems connected!");
+      } else {
+        toast.error("⚠️ Some connections failed — check status below");
+      }
+      return data.ok as boolean;
+    } catch {
+      toast.error("Verification request failed");
+      return false;
+    } finally {
+      setVerifying(false);
+    }
+  }, [settings]);
+
   // ── Quick Setup state (paste URLs → auto-extract IDs) ─────────────────────
   const [quickSheet, setQuickSheet] = useState("");
   const [quickFolder, setQuickFolder] = useState("");
@@ -162,13 +199,19 @@ export default function SettingsPage() {
       gas_web_app_url:        gasUrl   || settings.gas_web_app_url,
     };
     setSettings(next);
-    // Auto-save immediately
+    // Save first
     try {
       const res = await fetch("/api/settings", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next),
       });
-      if (res.ok) { setQuickApplied(true); toast.success("✅ Configured and saved!"); }
-      else toast.error("Save failed");
+      if (res.ok) {
+        setQuickApplied(true);
+        toast.success("✅ Settings saved! Verifying connections…");
+        // Auto-verify after save
+        await verifyConnections(next);
+      } else {
+        toast.error("Save failed");
+      }
     } catch { toast.error("Save failed"); }
   };
 
@@ -584,8 +627,49 @@ export default function SettingsPage() {
       </Section>
 
 
+      {/* ── Connection Status Panel ─────────────────────────────────────────*/}
+      {connStatus && (
+        <div className="glass-card mb-4 overflow-hidden shadow-sm p-5">
+          <h3 className="font-bold text-[0.95rem] mb-3 flex items-center gap-2 text-[var(--color-text-primary)]">
+            <Wifi size={16} className="text-[var(--color-accent)]" /> Connection Status
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {([
+              { key: "gas",   label: "Google Apps Script" },
+              { key: "sheet", label: "Google Sheet"        },
+              { key: "drive", label: "Google Drive"        },
+            ] as { key: keyof typeof connStatus; label: string }[]).map(({ key, label }) => {
+              const s = connStatus[key];
+              return (
+                <div key={key} className={`flex items-start gap-2.5 p-3 rounded-xl border text-[0.8rem] font-medium ${
+                  s.ok
+                    ? "bg-[var(--color-success-light)] border-[var(--color-success)]/30 text-[var(--color-success)]"
+                    : "bg-[var(--color-danger-light)] border-[var(--color-danger)]/30 text-[var(--color-danger)]"
+                }`}>
+                  {s.ok
+                    ? <CheckCircle2 size={16} className="shrink-0 mt-0.5" />
+                    : <AlertCircle  size={16} className="shrink-0 mt-0.5" />}
+                  <div>
+                    <p className="font-semibold">{label}</p>
+                    <p className="opacity-80 font-normal text-[0.75rem] mt-0.5">{s.message}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ── Save ──────────────────────────────────────────────────────────────*/}
-      <div className="flex justify-end mt-6">
+      <div className="flex justify-end items-center gap-3 mt-6">
+        <button
+          className="btn-secondary py-3 px-6 font-semibold"
+          onClick={() => verifyConnections()}
+          disabled={verifying}
+        >
+          <Wifi size={15} className={verifying ? "animate-pulse" : ""} />
+          {verifying ? "Verifying…" : "Test All Connections"}
+        </button>
         <button className="btn-primary py-3 px-8 shadow-md font-bold text-[0.95rem]" onClick={saveSettings} disabled={saving}>
           <Save size={16} /> {saving ? "Saving…" : "Save All Settings"}
         </button>
