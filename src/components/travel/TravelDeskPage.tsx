@@ -39,6 +39,7 @@ const EMPTY_FORM = {
   passport_copy_received: "No", voucher_received: "No",
   reimbursement_amount: "", bl: "", bl_url: "",
   passport_url: "", business_card_url: "",
+  ticket_url: "", invoice_url: "", visa_url: "", voucher_url: "",
 };
 type FormState = typeof EMPTY_FORM & { reimbursement_amount_verified?: boolean };
 type FileMap = { ticket?: File; invoice?: File; visa?: File; passport?: File; voucher?: File; business_card?: File; bl?: File };
@@ -180,6 +181,10 @@ export default function TravelDeskPage({ isAdmin = false, isSupervisor = false }
       bl_url: r.bl_url ?? "",
       passport_url: r.passport_url ?? "",
       business_card_url: r.business_card_url ?? "",
+      ticket_url: r.ticket_url ?? "",
+      invoice_url: r.invoice_url ?? "",
+      visa_url: r.visa_url ?? "",
+      voucher_url: r.voucher_url ?? "",
       reimbursement_amount_verified: false,
     });
     setFiles({});
