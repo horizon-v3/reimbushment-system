@@ -222,6 +222,38 @@ export async function deleteSheetRecord(
   );
 }
 
+// ─── Create the Travel Desk Print Sheet (Sheet 2) ─────────────────────────
+export async function createTravelSheet(
+  options: { sheetId?: string; sheetName?: string; gasUrl?: string } = {}
+) {
+  const gasUrl = options.gasUrl || GAS_URL;
+  return callGasDirect(
+    {
+      action:    "createTravelSheet",
+      sheetId:   options.sheetId,
+      sheetName: options.sheetName || "Travel Desk Sheet 2",
+    },
+    gasUrl
+  );
+}
+
+// ─── Backup travel record to Sheet 2 (SERVER-SIDE) ────────────────────────
+export async function backupToTravelSheet2(
+  travelRecord: Record<string, unknown>,
+  options: { sheetId?: string; sheetName?: string; gasUrl?: string } = {}
+) {
+  const gasUrl = options.gasUrl || GAS_URL;
+  return callGasDirect(
+    {
+      action:       "backupToTravelSheet2",
+      travelRecord: travelRecord,
+      sheetId:      options.sheetId,
+      sheetName:    options.sheetName || "Travel Desk Sheet 2",
+    },
+    gasUrl
+  );
+}
+
 // ─── Ping GAS (CLIENT-SIDE) ───────────────────────────────────────────────
 export async function pingGas() {
   return callGasClient<{ message: string }>({ action: "ping" });

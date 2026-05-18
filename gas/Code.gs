@@ -93,6 +93,12 @@ function handleRequest(e, method) {
       case "exportToExcel":
         response = executeWithLock(function() { return handleExportToExcel(body); });
         break;
+      case "createTravelSheet":
+        response = executeWithLock(function() { return handleCreateTravelSheet(body); });
+        break;
+      case "backupToTravelSheet2":
+        response = executeWithLock(function() { return handleBackupToTravelSheet2(body); });
+        break;
       default:
         return jsonResponse({ ok: false, error: "Unknown action provided: " + action }, 400);
     }
@@ -639,6 +645,217 @@ function handleExportToExcel(body) {
     downloadLink: file.getDownloadUrl(),
     webViewLink: file.getUrl()
   };
+}
+
+// ─── TRAVEL DESK PRINT SHEET (SHEET 2) ────────────────────────────────────────
+
+/**
+ * The exact column layout the user specified for the Travel Desk print sheet.
+ * Maps column header → record field name (snake_case from Next.js).
+ */
+var TRAVEL_SHEET2_COLUMNS = [
+  { header: "Sr. No.",                                          field: "_row_num"            },
+  { header: "Responses Sr No",                                  field: "responses_sr_no"     },
+  { header: "Room No.",                                         field: "room_no"             },
+  { header: "Hotel Name",                                       field: "hotel_name"          },
+  { header: "Initial",                                          field: "initial"             },
+  { header: "First Name",                                       field: "first_name"          },
+  { header: "Last Name",                                        field: "last_name"           },
+  { header: "Country Name",                                     field: "country_name"        },
+  { header: "Country code",                                     field: "country_code"        },
+  { header: "Participant Mobile/Whatsapp number",               field: "participant_mobile"  },
+  { header: "Check In Date",                                    field: "check_in_date"       },
+  { header: "Check Out Date",                                   field: "check_out_date"      },
+  { header: "Occupancy (Single (1) / Double (0.5))",            field: "room_units"          },
+  { header: "Date of Arrival at Delhi",                         field: "arrival_date"        },
+  { header: "Flight Number (Arrival)",                          field: "arrival_flight_no"   },
+  { header: "To",                                               field: "arrival_to"          },
+  { header: "Arrival time",                                     field: "arrival_time"        },
+  { header: "Date of Travel (Departure)",                       field: "departure_date"      },
+  { header: "Flight Number (Departure)",                        field: "departure_flight_no" },
+  { header: "From",                                             field: "departure_from"      },
+  { header: "Dep Time",                                         field: "departure_time"      },
+  { header: "Sector",                                           field: "sector"              },
+  { header: "Companies",                                        field: "company_name"        },
+  { header: "POC",                                              field: "poc"                 },
+  { header: "Status",                                           field: "status"              },
+  { header: "Reimbursement",                                    field: "reimbursement"       },
+  { header: "Additional Days Voucher",                          field: "voucher_received"    },
+  { header: "Remarks",                                          field: "notes"               },
+  { header: "Invoice Amount",                                   field: "invoice_amount"      },
+  { header: "Invoice Amount In USD",                            field: "invoice_amount_usd"  },
+  { header: "Ticket",                                           field: "ticket_received"     },
+  { header: "Invoice",                                          field: "invoice_received"    },
+  { header: "Visa",                                             field: "visa_received"       },
+  { header: "PRINT STATUS",                                     field: "_print_status"       }
+];
+
+/**
+ * Creates (or resets) Sheet 2 in the target spreadsheet with the exact
+ * Travel Desk column layout. Safe to run multiple times — preserves data rows.
+ */
+function handleCreateTravelSheet(body) {
+  var sheetId   = body.sheetId;
+  var sheetName = body.sheetName || "Travel Desk Sheet 2";
+
+  if (!sheetId) return { ok: false, error: "sheetId required" };
+
+  var ss = SpreadsheetApp.openById(sheetId);
+  var sheet = ss.getSheetByName(sheetName);
+
+  // Create if it doesn't exist
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+  }
+
+  // Write headers row
+  var headers = TRAVEL_SHEET2_COLUMNS.map(function(c) { return c.header; });
+  var numCols = headers.length;
+
+  // Expand columns if needed
+  if (sheet.getMaxColumns() < numCols) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), numCols - sheet.getMaxColumns());
+  }
+
+  // Set headers in row 1
+  sheet.getRange(1, 1, 1, numCols).setValues([headers]);
+
+  // Style the header row
+  var headerRange = sheet.getRange(1, 1, 1, numCols);
+  headerRange
+    .setFontWeight("bold")
+    .setBackground("#1a73e8")
+    .setFontColor("#ffffff")
+    .setHorizontalAlignment("center")
+    .setWrap(true);
+
+  // Freeze header row
+  sheet.setFrozenRows(1);
+
+  // Auto-resize columns for readability
+  sheet.setColumnWidths(1, numCols, 130);
+
+  return {
+    ok: true,
+    message: "Sheet '" + sheetName + "' created with " + numCols + " columns",
+    sheetName: sheetName
+  };
+}
+
+/**
+ * Upserts a single travel record row into Sheet 2 using the exact column layout.
+ * Matches by Responses Sr No. If not found, appends as a new row.
+ * Also auto-creates the sheet if it doesn't exist yet.
+ */
+function handleBackupToTravelSheet2(body) {
+  var sheetId   = body.sheetId;
+  var sheetName = body.sheetName || "Travel Desk Sheet 2";
+  var record    = body.travelRecord || {};
+
+  if (!sheetId) return { ok: false, error: "sheetId required" };
+
+  var ss = SpreadsheetApp.openById(sheetId);
+  var sheet = ss.getSheetByName(sheetName);
+
+  // Auto-create sheet if missing
+  if (!sheet) {
+    var createResult = handleCreateTravelSheet({ sheetId: sheetId, sheetName: sheetName });
+    if (!createResult.ok) return createResult;
+    sheet = ss.getSheetByName(sheetName);
+  }
+
+  var numCols = TRAVEL_SHEET2_COLUMNS.length;
+
+  // Ensure headers are present
+  var headerRow = sheet.getRange(1, 1, 1, numCols).getValues()[0];
+  if (!headerRow[0] || String(headerRow[0]).trim() === "") {
+    handleCreateTravelSheet({ sheetId: sheetId, sheetName: sheetName });
+    headerRow = sheet.getRange(1, 1, 1, numCols).getValues()[0];
+  }
+
+  // Find target row by Responses Sr No
+  var srNo = String(record.responses_sr_no || "").trim();
+  var targetRow = null;
+
+  if (srNo && sheet.getLastRow() > 1) {
+    // Sr No is the 2nd column (index 1)
+    var srColIdx = 2; // 1-based: column B = Responses Sr No
+    var existingData = sheet.getRange(2, srColIdx, sheet.getLastRow() - 1, 1).getValues();
+    for (var i = 0; i < existingData.length; i++) {
+      if (String(existingData[i][0]).trim() === srNo) {
+        targetRow = i + 2; // +2 for header offset + 0-index
+        break;
+      }
+    }
+  }
+
+  if (!targetRow) {
+    targetRow = sheet.getLastRow() + 1;
+  }
+
+  // Ensure we have enough physical rows
+  if (targetRow > sheet.getMaxRows()) {
+    sheet.insertRowsAfter(sheet.getMaxRows(), targetRow - sheet.getMaxRows());
+  }
+
+  // Build the row data array matching TRAVEL_SHEET2_COLUMNS order
+  var totalRows = sheet.getLastRow(); // for _row_num
+  var rowData = TRAVEL_SHEET2_COLUMNS.map(function(col, idx) {
+    if (col.field === "_row_num") {
+      return targetRow - 1; // Row number (excludes header)
+    }
+    if (col.field === "_print_status") {
+      return ""; // Blank — user fills manually
+    }
+    var val = record[col.field];
+    if (val === null || val === undefined) return "";
+    return String(val);
+  });
+
+  // Write the full row in one batch (fastest method)
+  sheet.getRange(targetRow, 1, 1, numCols).setValues([rowData]);
+
+  // Alternating row color for readability
+  if (targetRow % 2 === 0) {
+    sheet.getRange(targetRow, 1, 1, numCols).setBackground("#f8f9fa");
+  } else {
+    sheet.getRange(targetRow, 1, 1, numCols).setBackground("#ffffff");
+  }
+
+  return {
+    ok: true,
+    targetRow: targetRow,
+    srNo: srNo,
+    sheetName: sheetName
+  };
+}
+
+/**
+ * Deletes a row from Sheet 2 by Responses Sr No.
+ * Called automatically when a travel record is deleted from the CRM.
+ */
+function handleDeleteFromTravelSheet2(body) {
+  var sheetId   = body.sheetId;
+  var sheetName = body.sheetName || "Travel Desk Sheet 2";
+  var srNo      = String(body.srNo || "").trim();
+
+  if (!sheetId || !srNo) return { ok: false, error: "sheetId and srNo required" };
+
+  var ss = SpreadsheetApp.openById(sheetId);
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return { ok: true, message: "Sheet not found, nothing to delete" };
+
+  if (sheet.getLastRow() <= 1) return { ok: true, message: "Sheet is empty" };
+
+  var data = sheet.getRange(2, 2, sheet.getLastRow() - 1, 1).getValues(); // Column B = Sr No
+  for (var i = 0; i < data.length; i++) {
+    if (String(data[i][0]).trim() === srNo) {
+      sheet.deleteRow(i + 2);
+      return { ok: true, message: "Row deleted from Sheet 2" };
+    }
+  }
+
+  return { ok: false, error: "Sr No not found in Sheet 2: " + srNo };
 }
 
 // ─── UTILITY & HELPER FUNCTIONS ───────────────────────────────────────────────

@@ -1,50 +1,26 @@
--- ═════════════════════════════════════════════════════════════════════════════════════
--- DelegateConnect — Enterprise PostgreSQL Schema Definition (Neon DB)
--- VERSION: 3.0.0-Production
--- ═════════════════════════════════════════════════════════════════════════════════════
--- 
--- 📌 INSTRUCTIONS FOR DEPLOYMENT:
--- 1. Open the Neon Dashboard (console.neon.tech)
--- 2. Select your project and navigate to the "SQL Editor" on the left sidebar
--- 3. Copy this ENTIRE file (Ctrl+A / Cmd+A, then Ctrl+C / Cmd+C)
--- 4. Paste it into the Neon SQL Editor and click "Run"
---
--- 📌 DISASTER RECOVERY & FAIL-SAFE (STAND-BY) STRATEGY:
--- This database architecture is designed with enterprise fail-safes in mind:
---   - 1. Automated Updated_At Triggers: Ensures that no modification happens without a timestamp.
---   - 2. Comprehensive Audit Logging: Every single deletion or modification is tracked.
---   - 3. Deep Indexing: All queried columns are indexed to prevent database locking under high load.
---   - 4. Idempotent Migrations: Safe to execute on existing databases without dropping tables.
--- 
--- 📌 STAND-BY REPLICA ARCHITECTURE (Neon Compute):
--- For production high availability, Neon allows configuring "Read Replicas" (Stand-by DBs).
--- Once this schema is deployed, you can create a Read Replica compute node in the Neon
--- dashboard to handle heavy reporting and dashboard analytics without impacting the 
--- main Writer compute node handling live registrations.
---
--- ═════════════════════════════════════════════════════════════════════════════════════
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- DelegateConnect CRM — Enterprise PostgreSQL Schema v4.0.0
+-- Target: Neon Serverless Postgres
+-- ───────────────────────────────────────────────────────────────────────────────
+-- DEPLOY: Open Neon SQL Editor → Ctrl+A → Ctrl+V → Run
+-- SAFE:   All statements use IF NOT EXISTS / ON CONFLICT — run multiple times safely
+-- ═══════════════════════════════════════════════════════════════════════════════
 
--- ─── 0. MASTER RESET (DANGER ZONE) ───────────────────────────────────────────────────
--- The following block is commented out by default for safety.
--- If you need to completely factory-reset your database (deleting all existing data, 
--- user accounts, and settings), remove the '-- ' from the DROP TABLE commands below.
--- 
--- WARNING: This action is IRREVERSIBLE. Do not run this on a production database 
--- unless you have a confirmed backup or explicitly intend to destroy all data.
--- 
--- DROP TABLE IF EXISTS "audit_log" CASCADE;
--- DROP TABLE IF EXISTS "travel_records" CASCADE;
--- DROP TABLE IF EXISTS "app_settings" CASCADE;
--- DROP TABLE IF EXISTS "registrations" CASCADE;
--- DROP TABLE IF EXISTS "chat_messages" CASCADE;
--- DROP TABLE IF EXISTS "users" CASCADE;
+-- ─── OPTIONAL MASTER RESET (COMMENTED OUT FOR SAFETY) ───────────────────────
+-- Uncomment ONLY if you want to completely wipe and rebuild the database.
+-- WARNING: IRREVERSIBLE — All data will be permanently deleted.
+--
+-- DROP TABLE IF EXISTS audit_log         CASCADE;
+-- DROP TABLE IF EXISTS travel_records    CASCADE;
+-- DROP TABLE IF EXISTS app_settings      CASCADE;
+-- DROP TABLE IF EXISTS registrations     CASCADE;
+-- DROP TABLE IF EXISTS users             CASCADE;
 -- DROP FUNCTION IF EXISTS trigger_set_timestamp CASCADE;
--- ───────────────────────────────────────────────────────────────────────────────────
 
--- ─── 1. FAIL-SAFE: AUTOMATED TIMESTAMP TRIGGERS ────────────────────────────────────
--- This function ensures that the 'updated_at' column is strictly maintained by the DB engine.
--- Even if the Node.js / Next.js backend crashes or forgets to send an updated_at timestamp,
--- the Postgres engine will intervene and fix it automatically.
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- SECTION 1: TIMESTAMP TRIGGER FUNCTION
+-- Automatically keeps updated_at in sync even if the application forgets to.
+-- ═══════════════════════════════════════════════════════════════════════════════
 CREATE OR REPLACE FUNCTION trigger_set_timestamp()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -52,301 +28,328 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
--- ───────────────────────────────────────────────────────────────────────────────────
 
--- ─── 2. CORE SYSTEM: USERS & AUTHENTICATION ──────────────────────────────────────────
--- The 'users' table handles the Role-Based Access Control (RBAC) for the CRM.
--- By default, accounts can be either 'admin' or 'staff'.
---   - admin: Has full access to delete records, wipe the database, and modify settings.
---   - staff: Read-only access or limited write access, depending on the frontend rules.
---
--- Passwords must be hashed using bcrypt (cost factor 10 or 12) before insertion.
--- Never insert plaintext passwords into the password_hash column.
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- SECTION 2: USERS & AUTHENTICATION
+-- Handles all role-based access control for the CRM dashboard.
+-- Roles: admin (full access), supervisor (read/write), user (read + data entry)
+-- Passwords MUST be bcrypt hashed before insertion (cost 10–12).
+-- ═══════════════════════════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS users (
   id            SERIAL PRIMARY KEY,
-  email         TEXT NOT NULL UNIQUE,       -- Used as the login ID
-  password_hash TEXT NOT NULL,              -- Bcrypt hashed password string
-  name          TEXT,                       -- Display name in the UI
-  role          TEXT DEFAULT 'staff',       -- 'admin' | 'staff'
-  created_at    TIMESTAMP DEFAULT NOW(),    -- Auto-set on creation
-  updated_at    TIMESTAMP DEFAULT NOW()     -- Should be updated by trigger/code on edit
+  email         TEXT        NOT NULL UNIQUE,  -- Login identifier (username or email)
+  password_hash TEXT        NOT NULL,          -- bcrypt hash, NEVER plaintext
+  name          TEXT,                          -- Display name shown in UI
+  role          TEXT        DEFAULT 'user',    -- 'admin' | 'supervisor' | 'user'
+  is_active     BOOLEAN     DEFAULT TRUE,      -- Soft disable without deletion
+  last_login_at TIMESTAMP,                     -- Track last successful login
+  created_at    TIMESTAMP   DEFAULT NOW(),
+  updated_at    TIMESTAMP   DEFAULT NOW(),
+  -- Constraints
+  CONSTRAINT users_role_check CHECK (role IN ('admin', 'supervisor', 'user')),
+  CONSTRAINT users_email_length CHECK (char_length(email) <= 320)
 );
 
--- Attach automated updated_at trigger for fail-safe
 DROP TRIGGER IF EXISTS set_timestamp_users ON users;
 CREATE TRIGGER set_timestamp_users
-BEFORE UPDATE ON users
-FOR EACH ROW
-EXECUTE FUNCTION trigger_set_timestamp();
--- ───────────────────────────────────────────────────────────────────────────────────
+  BEFORE UPDATE ON users
+  FOR EACH ROW EXECUTE FUNCTION trigger_set_timestamp();
 
+COMMENT ON TABLE  users              IS 'CRM staff accounts with RBAC. Passwords must be bcrypt hashed.';
+COMMENT ON COLUMN users.email        IS 'Primary login identifier — must be unique';
+COMMENT ON COLUMN users.role         IS 'admin=full, supervisor=read/write, user=data entry';
+COMMENT ON COLUMN users.is_active    IS 'Set to FALSE to disable login without deleting the account';
 
--- ─── 3. DELEGATE REGISTRATIONS (MAIN DATA STORE) ───────────────────────────────────
--- This is the central source of truth for all delegate data.
--- 
--- DATA INGESTION PIPELINE:
--- 1. Delegate submits Google Form
--- 2. Google Form populates Google Sheet
--- 3. Google Apps Script detects new row, processes attachments
--- 4. Next.js API /sync route pulls data OR bulk CSV upload pushes data
--- 5. Data is mapped to these exact columns and inserted here
---
--- CRITICAL FIELDS:
--- - sr_no: The unique sequential number generated by the Google Form. 
---          This acts as the primary logical key for UPSERT operations during syncs.
--- - main_import_product_1/2: Used for analytics and pivot tables in the dashboard.
---
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- SECTION 3: DELEGATE REGISTRATIONS
+-- Primary table for all delegate form submissions ingested from Google Forms
+-- via the Google Apps Script sync pipeline.
+-- Upsert key: sr_no (Sequential row number from the Google Sheet)
+-- ═══════════════════════════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS registrations (
   id                       SERIAL PRIMARY KEY,
-  
-  -- Core Identity
-  sr_no                    INTEGER UNIQUE,  -- Sequential ID from Google Forms (used for upserts)
-  timestamp_raw            TEXT,            -- Original submission time (DD/MM/YYYY HH:MM:SS)
-  title                    TEXT,            -- Mr. / Ms. / Dr.
-  first_name               TEXT,            -- Given name as per passport
-  last_name                TEXT,            -- Surname as per passport
-  
+
+  -- Core Identity (from Google Form)
+  sr_no                    INTEGER UNIQUE,       -- Google Form row number (upsert key)
+  timestamp_raw            TEXT,                 -- Original submission timestamp string
+  title                    TEXT,                 -- Mr. / Ms. / Dr. / Prof.
+  first_name               TEXT,                 -- Given name as per passport
+  last_name                TEXT,                 -- Family name as per passport
+
   -- Geography & Contact
-  country_name             TEXT,            -- Operating country
-  passport_country         TEXT,            -- Issuing country of passport
-  region                   TEXT,            -- Geographic region classification
-  participant_mobile       TEXT,            -- Phone with ISD code (+XX)
-  participant_email        TEXT,            -- Primary contact email
-  
+  country_name             TEXT,
+  passport_country         TEXT,                 -- Country that issued the passport
+  region                   TEXT,                 -- Geographic region (APAC, EMEA, etc.)
+  participant_mobile       TEXT,                 -- Phone with ISD code e.g. +91 9876543210
+  participant_email        TEXT,
+
   -- Professional Details
-  company_name             TEXT,            -- Registered entity name
-  company_website          TEXT,            -- Corporate URL
-  designation              TEXT,            -- Job title / Role
-  nature_of_business       TEXT,            -- Industry categorization
-  products_services        TEXT,            -- Detailed description of offerings
-  
-  -- Sourcing & Products
-  main_import_product_1    TEXT,            -- Primary sector of interest
-  main_import_product_2    TEXT,            -- Secondary sector of interest
-  bl_supplier_country      TEXT,            -- Origin country of previous imports
-  bl_buyer_country         TEXT,            -- Destination country of previous imports
-  
-  -- Travel Documents & Identification
-  passport_number          TEXT,            -- Alphanumeric passport ID
-  place_of_issue           TEXT,            -- City/Authority of issue
-  date_of_expiry           TEXT,            -- Passport validity end date
-  
-  -- Original Upload Links (Google Form attachment URLs)
-  passport_front_copy      TEXT,            
-  passport_back_copy       TEXT,            
-  proof_upload             TEXT,            -- Bill of Lading or equivalent
-  business_card_upload     TEXT,            
-  
-  -- Processed Drive Links (Generated by Google Apps Script)
-  -- These are clean, public view/download links generated after processing
+  company_name             TEXT,
+  company_website          TEXT,
+  designation              TEXT,
+  nature_of_business       TEXT,
+  products_services        TEXT,                 -- Full description of offerings
+
+  -- Trade & Sourcing
+  main_import_product_1    TEXT,                 -- Primary sector of interest
+  main_import_product_2    TEXT,                 -- Secondary sector
+  bl_supplier_country      TEXT,                 -- Country of previous supplier
+  bl_buyer_country         TEXT,                 -- Country of previous buyer
+
+  -- Passport & Travel Documents
+  passport_number          TEXT,
+  place_of_issue           TEXT,
+  date_of_expiry           TEXT,
+
+  -- Original Google Form Upload URLs (raw Google Drive links)
+  passport_front_copy      TEXT,
+  passport_back_copy       TEXT,
+  proof_upload             TEXT,                 -- Bill of Lading or similar
+  business_card_upload     TEXT,
+
+  -- Processed Google Drive URLs (generated by Apps Script after processing)
   drive_passport_front_url TEXT,
   drive_passport_back_url  TEXT,
   drive_proof_url          TEXT,
   drive_business_card_url  TEXT,
-  
+
   -- Administrative Fields
-  poc                      TEXT,            -- Internal Point of Contact
-  proof_import             TEXT,            -- Verification status
-  type_of_poi              TEXT,            -- Type of proof provided
-  status                   TEXT,            -- Overall application status (Confirmed, Pending, etc)
-  flight_hotel_code        TEXT,            -- Internal tracking code
-  remarks                  TEXT,            -- General admin notes
-  bl_status                TEXT,            -- Bill of Lading verification status
-  bb_invitation_status     TEXT,            -- Formal invitation letter status
-  
+  poc                      TEXT,                 -- Assigned Point of Contact (internal staff)
+  proof_import             TEXT,                 -- Import proof verification status
+  type_of_poi              TEXT,                 -- Type: BL / Bank Statement / Invoice
+  status                   TEXT DEFAULT 'Pending', -- Pending | Confirmed | Cancelled | Waitlisted
+  flight_hotel_code        TEXT,                 -- Internal booking reference code
+  remarks                  TEXT,                 -- General admin notes
+  bl_status                TEXT,                 -- Bill of Lading verification: Verified | Pending | Rejected
+  bb_invitation_status     TEXT,                 -- Buyer-Buyer invitation letter status
+
   -- Timestamps
   created_at               TIMESTAMP DEFAULT NOW(),
-  updated_at               TIMESTAMP DEFAULT NOW()
+  updated_at               TIMESTAMP DEFAULT NOW(),
+
+  -- Constraints
+  CONSTRAINT registrations_status_check CHECK (
+    status IS NULL OR status IN ('Pending','Confirmed','Cancelled','Waitlisted','No Show')
+  )
 );
 
--- Attach automated updated_at trigger for fail-safe
 DROP TRIGGER IF EXISTS set_timestamp_registrations ON registrations;
 CREATE TRIGGER set_timestamp_registrations
-BEFORE UPDATE ON registrations
-FOR EACH ROW
-EXECUTE FUNCTION trigger_set_timestamp();
--- ───────────────────────────────────────────────────────────────────────────────────
+  BEFORE UPDATE ON registrations
+  FOR EACH ROW EXECUTE FUNCTION trigger_set_timestamp();
 
+COMMENT ON TABLE  registrations          IS 'Primary delegate registration records synced from Google Forms via Apps Script';
+COMMENT ON COLUMN registrations.sr_no    IS 'Google Sheet row number — used as the upsert key to prevent duplicates';
+COMMENT ON COLUMN registrations.status   IS 'Pending | Confirmed | Cancelled | Waitlisted | No Show';
 
--- ─── 4. TRAVEL DESK (LOGISTICS MANAGEMENT) ───────────────────────────────────────
--- This table manages the physical logistics of the event: flights, hotels, and 
--- document collection.
---
--- RELATIONSHIP:
--- Each travel record optionally links back to a primary registration via 'registration_id'.
--- If the registration is deleted, the travel record's link is set to NULL (ON DELETE SET NULL),
--- preserving the historical logistical data without breaking constraints.
---
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- SECTION 4: TRAVEL DESK — LOGISTICS MANAGEMENT
+-- Manages the physical logistics: flights, hotel, documents, and reimbursements.
+-- Each record optionally links to a registration (ON DELETE SET NULL preserves
+-- travel history even if the original registration is deleted).
+-- ═══════════════════════════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS travel_records (
   id                     SERIAL PRIMARY KEY,
   registration_id        INTEGER REFERENCES registrations(id) ON DELETE SET NULL,
-  responses_sr_no        TEXT,              -- String representation of Sr. No for display
-  
-  -- Delegate Core Info (Denormalized for quick querying in Travel Desk)
-  initial                TEXT,
+  responses_sr_no        TEXT,                  -- Sr No as text (display reference)
+
+  -- Delegate Core Info (denormalized for fast Travel Desk queries)
+  initial                TEXT,                  -- Mr. / Ms. / Dr.
   first_name             TEXT,
   last_name              TEXT,
   country_name           TEXT,
-  country_code           TEXT,
+  country_code           TEXT,                  -- ISO country code e.g. IN, US
   participant_mobile     TEXT,
   company_name           TEXT,
-  sector                 TEXT,              -- Matches main_import_product_1
-  poc                    TEXT,
-  
+  sector                 TEXT,                  -- Business sector / industry
+  poc                    TEXT,                  -- Assigned Point of Contact
+
   -- Hotel Logistics
-  hotel_name             TEXT,              -- Assigned property
-  room_no                TEXT,              -- Physical room assignment
+  hotel_name             TEXT,
+  room_no                TEXT,
   check_in_date          DATE,
   check_out_date         DATE,
-  room_units             TEXT,              -- Number of nights / units booked
-  
-  -- Arrival Flight
+  room_units             TEXT,                  -- '1' = Single, '0.5' = Double share
+
+  -- Arrival Flight Details
   arrival_date           DATE,
   arrival_flight_no      TEXT,
-  arrival_to             TEXT,              -- Destination airport code
+  arrival_to             TEXT,                  -- Destination airport (DEL, BOM, etc.)
   arrival_time           TIME,
-  
-  -- Departure Flight
+
+  -- Departure Flight Details
   departure_date         DATE,
   departure_flight_no    TEXT,
-  departure_from         TEXT,              -- Origin airport code
+  departure_from         TEXT,                  -- Origin airport
   departure_time         TIME,
-  
+
   -- Financial & Administrative
-  status                 TEXT DEFAULT 'Pending',
-  reimbursement          TEXT DEFAULT 'No', -- Is reimbursement approved? Yes/No
-  reimbursement_amount   TEXT,              -- Specific monetary amount (Requires double-verification in UI)
-  invoice_amount         TEXT,              -- Value in local currency
-  invoice_amount_usd     TEXT,              -- Value converted to USD
-  invoice_amount_local   TEXT,              -- Local amount
-  invoice_currency       TEXT,              -- Chosen currency
-  notes                  TEXT,              -- Internal logistic notes
-  
-  -- Document Collection Status Flags
-  ticket_received        TEXT DEFAULT 'No', -- Yes/No
-  invoice_received       TEXT DEFAULT 'No', -- Yes/No
-  visa_received          TEXT DEFAULT 'No', -- Yes/No
-  passport_copy_received TEXT DEFAULT 'No', -- Yes/No
-  voucher_received       TEXT DEFAULT 'No', -- Yes/No
-  
-  -- Additional Documents
-  bl                     TEXT,              -- Bill of Lading reference or link
-  
-  -- File URLs (Direct links to the actual files)
+  status                 TEXT DEFAULT 'Pending',  -- Pending | Confirmed | Cancelled
+  reimbursement          TEXT DEFAULT 'No',        -- Yes | No
+  reimbursement_amount   TEXT,                    -- Reimbursement value (text for currency flexibility)
+  invoice_amount         TEXT,                    -- Local currency invoice amount
+  invoice_amount_usd     TEXT,                    -- USD equivalent
+  invoice_amount_local   TEXT,                    -- Alternate local amount
+  invoice_currency       TEXT,                    -- Currency code e.g. INR, USD, EUR
+  notes                  TEXT,                    -- Internal logistics notes
+
+  -- Document Collection Status Flags (Yes / No)
+  ticket_received        TEXT DEFAULT 'No',
+  invoice_received       TEXT DEFAULT 'No',
+  visa_received          TEXT DEFAULT 'No',
+  passport_copy_received TEXT DEFAULT 'No',
+  voucher_received       TEXT DEFAULT 'No',
+
+  -- Bill of Lading
+  bl                     TEXT,                   -- BL reference text or link
+  bl_url                 TEXT,                   -- BL file URL (Google Drive)
+  bl_drive_id            TEXT,                   -- BL Drive file ID
+
+  -- Document File URLs (direct Google Drive view links)
   ticket_url             TEXT,
   invoice_url            TEXT,
   visa_url               TEXT,
   passport_url           TEXT,
   voucher_url            TEXT,
   business_card_url      TEXT,
-  bl_url                 TEXT,
-  
-  -- Google Drive IDs (Used by the API to manipulate files directly if needed)
+
+  -- Document Drive File IDs (for direct API manipulation)
   ticket_drive_id        TEXT,
   invoice_drive_id       TEXT,
   visa_drive_id          TEXT,
   passport_drive_id      TEXT,
   voucher_drive_id       TEXT,
   business_card_drive_id TEXT,
-  bl_drive_id            TEXT,
-  
+
+  -- Timestamps
   created_at             TIMESTAMP DEFAULT NOW(),
-  updated_at             TIMESTAMP DEFAULT NOW()
+  updated_at             TIMESTAMP DEFAULT NOW(),
+
+  -- Constraints
+  CONSTRAINT travel_status_check CHECK (
+    status IS NULL OR status IN ('Pending','Confirmed','Cancelled','Arrived','Departed')
+  ),
+  CONSTRAINT travel_reimbursement_check CHECK (
+    reimbursement IS NULL OR reimbursement IN ('Yes','No','Partial')
+  )
 );
 
--- Attach automated updated_at trigger for fail-safe
 DROP TRIGGER IF EXISTS set_timestamp_travel_records ON travel_records;
 CREATE TRIGGER set_timestamp_travel_records
-BEFORE UPDATE ON travel_records
-FOR EACH ROW
-EXECUTE FUNCTION trigger_set_timestamp();
--- ───────────────────────────────────────────────────────────────────────────────────
+  BEFORE UPDATE ON travel_records
+  FOR EACH ROW EXECUTE FUNCTION trigger_set_timestamp();
 
+COMMENT ON TABLE  travel_records                    IS 'Physical logistics: flights, hotels, documents and reimbursements per delegate';
+COMMENT ON COLUMN travel_records.registration_id    IS 'FK to registrations. NULL if registration was deleted (data preserved).';
+COMMENT ON COLUMN travel_records.room_units         IS '1 = Single occupancy, 0.5 = Double share occupancy';
+COMMENT ON COLUMN travel_records.responses_sr_no    IS 'Text version of Sr No — used for Google Sheet row matching';
 
--- ─── 5. SYSTEM CONFIGURATION ───────────────────────────────────────────────────────
--- This table acts as a key-value store for global application settings.
--- It ensures that administrators can update Google API integrations directly
--- from the UI without needing to alter environment variables or redeploy.
---
--- Only one row should ever exist in this table (id = 1).
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- SECTION 5: APPLICATION SETTINGS
+-- Stores Google Workspace configuration (Sheet IDs, Drive IDs, GAS URL).
+-- Only ONE row should ever exist (id = 1). Protected by primary key constraint.
+-- ═══════════════════════════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS app_settings (
-  id                      INTEGER PRIMARY KEY DEFAULT 1,
-  registration_sheet_id   TEXT,                             -- The ID from the Google Sheet URL
-  registration_sheet_name TEXT DEFAULT 'Form Responses 1',  -- The exact tab name
-  travel_sheet_name       TEXT DEFAULT 'Travel Desk Records',
-  drive_folder_id         TEXT,                             -- Target folder for file uploads
-  gas_web_app_url         TEXT,                             -- The deployed Google Apps Script URL
-  updated_at              TIMESTAMP DEFAULT NOW()
+  id                      INTEGER PRIMARY KEY DEFAULT 1,  -- Always 1 — singleton row
+  registration_sheet_id   TEXT,               -- Google Spreadsheet ID (from URL)
+  registration_sheet_name TEXT DEFAULT 'Form Responses 1', -- Tab name for registrations
+  travel_sheet_name       TEXT DEFAULT 'Travel Desk Records', -- Tab name for travel desk
+  drive_folder_id         TEXT,               -- Google Drive root folder ID for uploads
+  gas_web_app_url         TEXT,               -- Deployed Google Apps Script Web App URL
+  updated_at              TIMESTAMP DEFAULT NOW(),
+  -- Enforce single-row constraint
+  CONSTRAINT app_settings_singleton CHECK (id = 1)
 );
 
--- Attach automated updated_at trigger for fail-safe
 DROP TRIGGER IF EXISTS set_timestamp_app_settings ON app_settings;
 CREATE TRIGGER set_timestamp_app_settings
-BEFORE UPDATE ON app_settings
-FOR EACH ROW
-EXECUTE FUNCTION trigger_set_timestamp();
--- ───────────────────────────────────────────────────────────────────────────────────
+  BEFORE UPDATE ON app_settings
+  FOR EACH ROW EXECUTE FUNCTION trigger_set_timestamp();
 
+COMMENT ON TABLE  app_settings                    IS 'Singleton config row — stores Google Workspace integration settings';
+COMMENT ON COLUMN app_settings.gas_web_app_url    IS 'Full URL of deployed Apps Script Web App ending in /exec';
+COMMENT ON COLUMN app_settings.drive_folder_id    IS 'Root Drive folder where all delegate documents are organized';
 
--- ─── 6. SECURITY AUDIT LOG ─────────────────────────────────────────────────────────
--- Tracks all sensitive actions performed by users within the system.
--- Essential for compliance, debugging, and identifying malicious behavior.
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- SECTION 6: SECURITY AUDIT LOG
+-- Immutable audit trail for all sensitive CRM operations.
+-- Records are NEVER updated or deleted — append-only for compliance.
+-- ═══════════════════════════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS audit_log (
   id          SERIAL PRIMARY KEY,
   user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL, -- Who performed the action
-  action      TEXT NOT NULL,                                   -- E.g., 'clear_all_registrations'
-  entity_type TEXT,                                            -- E.g., 'travel_record'
-  entity_id   INTEGER,                                         -- ID of the affected row
-  metadata    JSONB,                                           -- Additional context (JSON)
-  created_at  TIMESTAMP DEFAULT NOW()                          -- When the action occurred
+  action      TEXT NOT NULL,         -- e.g. 'create_travel_record', 'delete_registration'
+  entity_type TEXT,                  -- e.g. 'travel_record', 'registration', 'user'
+  entity_id   INTEGER,               -- The ID of the affected row
+  metadata    JSONB,                 -- Additional context as JSON (e.g. { count: 50 })
+  ip_address  TEXT,                  -- Client IP (if captured by API)
+  created_at  TIMESTAMP DEFAULT NOW() -- Immutable — never update audit records
 );
--- ───────────────────────────────────────────────────────────────────────────────────
 
+COMMENT ON TABLE  audit_log          IS 'Immutable append-only audit trail. Never UPDATE or DELETE rows here.';
+COMMENT ON COLUMN audit_log.action   IS 'Verb describing the operation: create_, update_, delete_, bulk_import_';
+COMMENT ON COLUMN audit_log.metadata IS 'JSONB bag for extra context like batch counts or changed fields';
 
--- ─── 7. HIGH-PERFORMANCE INDEXING (FAIL-SAFE STAND-BY OPTIMIZATIONS) ───────────────
--- These indexes ensure that when the database is queried by the front-end,
--- read operations complete in milliseconds, preventing database locks.
---
--- These are crucial for a Stand-By architecture to distribute read-load cleanly.
--- Registration Indexes
-CREATE INDEX IF NOT EXISTS idx_reg_sr_no ON registrations (sr_no);
-CREATE INDEX IF NOT EXISTS idx_reg_country ON registrations (country_name);
-CREATE INDEX IF NOT EXISTS idx_reg_status ON registrations (status);
-CREATE INDEX IF NOT EXISTS idx_reg_company ON registrations (company_name);
-CREATE INDEX IF NOT EXISTS idx_reg_first_name ON registrations (first_name);
-CREATE INDEX IF NOT EXISTS idx_reg_last_name ON registrations (last_name);
-CREATE INDEX IF NOT EXISTS idx_reg_sector_1 ON registrations (main_import_product_1);
-CREATE INDEX IF NOT EXISTS idx_reg_sector_2 ON registrations (main_import_product_2);
-CREATE INDEX IF NOT EXISTS idx_reg_email ON registrations (participant_email);
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- SECTION 7: HIGH-PERFORMANCE INDEXES
+-- All critical query paths are indexed. These prevent full-table scans under load.
+-- IF NOT EXISTS ensures safe re-execution on existing databases.
+-- ═══════════════════════════════════════════════════════════════════════════════
 
--- Travel Record Indexes
-CREATE INDEX IF NOT EXISTS idx_trv_reg_id ON travel_records (registration_id);
-CREATE INDEX IF NOT EXISTS idx_trv_status ON travel_records (status);
-CREATE INDEX IF NOT EXISTS idx_trv_hotel ON travel_records (hotel_name);
-CREATE INDEX IF NOT EXISTS idx_trv_poc ON travel_records (poc);
-CREATE INDEX IF NOT EXISTS idx_trv_sector ON travel_records (sector);
-CREATE INDEX IF NOT EXISTS idx_trv_arrival_date ON travel_records (arrival_date);
+-- Users
+CREATE INDEX IF NOT EXISTS idx_users_email      ON users (email);
+CREATE INDEX IF NOT EXISTS idx_users_role       ON users (role);
+CREATE INDEX IF NOT EXISTS idx_users_is_active  ON users (is_active);
+
+-- Registrations (most-queried columns)
+CREATE INDEX IF NOT EXISTS idx_reg_sr_no        ON registrations (sr_no);
+CREATE INDEX IF NOT EXISTS idx_reg_status       ON registrations (status);
+CREATE INDEX IF NOT EXISTS idx_reg_country      ON registrations (country_name);
+CREATE INDEX IF NOT EXISTS idx_reg_company      ON registrations (company_name);
+CREATE INDEX IF NOT EXISTS idx_reg_first_name   ON registrations (first_name);
+CREATE INDEX IF NOT EXISTS idx_reg_last_name    ON registrations (last_name);
+CREATE INDEX IF NOT EXISTS idx_reg_email        ON registrations (participant_email);
+CREATE INDEX IF NOT EXISTS idx_reg_poc          ON registrations (poc);
+CREATE INDEX IF NOT EXISTS idx_reg_product_1    ON registrations (main_import_product_1);
+CREATE INDEX IF NOT EXISTS idx_reg_product_2    ON registrations (main_import_product_2);
+CREATE INDEX IF NOT EXISTS idx_reg_bl_status    ON registrations (bl_status);
+CREATE INDEX IF NOT EXISTS idx_reg_created_at   ON registrations (created_at DESC);
+
+-- Travel Records (most-queried columns)
+CREATE INDEX IF NOT EXISTS idx_trv_reg_id         ON travel_records (registration_id);
+CREATE INDEX IF NOT EXISTS idx_trv_sr_no          ON travel_records (responses_sr_no);
+CREATE INDEX IF NOT EXISTS idx_trv_status         ON travel_records (status);
+CREATE INDEX IF NOT EXISTS idx_trv_hotel          ON travel_records (hotel_name);
+CREATE INDEX IF NOT EXISTS idx_trv_poc            ON travel_records (poc);
+CREATE INDEX IF NOT EXISTS idx_trv_country        ON travel_records (country_name);
+CREATE INDEX IF NOT EXISTS idx_trv_sector         ON travel_records (sector);
+CREATE INDEX IF NOT EXISTS idx_trv_arrival_date   ON travel_records (arrival_date);
 CREATE INDEX IF NOT EXISTS idx_trv_departure_date ON travel_records (departure_date);
--- ───────────────────────────────────────────────────────────────────────────────────
+CREATE INDEX IF NOT EXISTS idx_trv_check_in       ON travel_records (check_in_date);
+CREATE INDEX IF NOT EXISTS idx_trv_reimbursement  ON travel_records (reimbursement);
+CREATE INDEX IF NOT EXISTS idx_trv_created_at     ON travel_records (created_at DESC);
 
+-- Audit Log
+CREATE INDEX IF NOT EXISTS idx_audit_user_id    ON audit_log (user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_action     ON audit_log (action);
+CREATE INDEX IF NOT EXISTS idx_audit_entity     ON audit_log (entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_log (created_at DESC);
 
--- ─── 8. SYSTEM INITIALIZATION ──────────────────────────────────────────────────────
--- Insert the default configuration row. ON CONFLICT ensures this doesn't overwrite
--- existing settings if the schema script is run multiple times.
-INSERT INTO app_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
--- ───────────────────────────────────────────────────────────────────────────────────
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- SECTION 8: SYSTEM INITIALIZATION
+-- Creates the default settings row (id=1). ON CONFLICT ensures idempotent runs.
+-- ═══════════════════════════════════════════════════════════════════════════════
+INSERT INTO app_settings (id)
+VALUES (1)
+ON CONFLICT (id) DO NOTHING;
 
-
--- ─── 9. ADMIN SEEDING ──────────────────────────────────────────────────────────────
--- Creates the default administrative account so you can log into the system immediately.
--- 
--- Credentials:
---   Username: admin
---   Password: manthan18
---
--- The password hash here is securely generated via bcrypt(cost=12).
--- ON CONFLICT ensures that if the admin account already exists, it is reset to these
--- default credentials to guarantee access.
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- SECTION 9: DEFAULT ADMIN ACCOUNT
+-- Creates the default admin account for immediate login after deployment.
+-- Credentials: username=admin / password=manthan18
+-- Hash: bcrypt(cost=12) of "manthan18"
+-- ON CONFLICT resets credentials — safe to re-run if locked out.
+-- ═══════════════════════════════════════════════════════════════════════════════
 INSERT INTO users (email, password_hash, name, role)
 VALUES (
   'admin',
@@ -356,32 +359,19 @@ VALUES (
 )
 ON CONFLICT (email) DO UPDATE
   SET password_hash = EXCLUDED.password_hash,
+      name          = 'Admin',
       role          = 'admin',
-      name          = 'Admin';
--- ───────────────────────────────────────────────────────────────────────────────────
+      is_active     = TRUE;
 
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- SECTION 10: IDEMPOTENT COLUMN MIGRATIONS
+-- Safely adds any columns that may be missing in older database instances.
+-- These ALTER TABLE statements are 100% safe to run on both new and existing DBs.
+-- ═══════════════════════════════════════════════════════════════════════════════
 
--- ═════════════════════════════════════════════════════════════════════════════════════
--- ✅ SUCCESS: Schema Generation Complete. 
--- You can now log into the deployed application using:
--- Email: admin
--- Password: manthan18
--- ═════════════════════════════════════════════════════════════════════════════════════
-
-
--- ─── 10. IDEMPOTENT MIGRATION BLOCK (DO NOT REMOVE) ─────────────────────────────────
--- This section is critical. It guarantees that running this script multiple times
--- will NEVER crash or delete your data.
--- 
--- If you already have tables, but they are missing new columns (like the newly added
--- reimbursement_amount or business_card_url), the 'IF NOT EXISTS' clause will gracefully
--- append the new columns to your live database without disturbing the existing rows.
--- 
--- This is how we ensure backward compatibility and seamless upgrades.
-
--- 10A. Ensure all registration columns exist
+-- 10A. Registrations — ensure all columns exist
 ALTER TABLE registrations
-  ADD COLUMN IF NOT EXISTS sr_no                    INTEGER UNIQUE,
+  ADD COLUMN IF NOT EXISTS sr_no                    INTEGER,
   ADD COLUMN IF NOT EXISTS timestamp_raw            TEXT,
   ADD COLUMN IF NOT EXISTS title                    TEXT,
   ADD COLUMN IF NOT EXISTS first_name               TEXT,
@@ -394,205 +384,80 @@ ALTER TABLE registrations
   ADD COLUMN IF NOT EXISTS company_name             TEXT,
   ADD COLUMN IF NOT EXISTS company_website          TEXT,
   ADD COLUMN IF NOT EXISTS designation              TEXT,
+  ADD COLUMN IF NOT EXISTS nature_of_business       TEXT,
+  ADD COLUMN IF NOT EXISTS products_services        TEXT,
+  ADD COLUMN IF NOT EXISTS main_import_product_1    TEXT,
+  ADD COLUMN IF NOT EXISTS main_import_product_2    TEXT,
+  ADD COLUMN IF NOT EXISTS bl_supplier_country      TEXT,
+  ADD COLUMN IF NOT EXISTS bl_buyer_country         TEXT,
   ADD COLUMN IF NOT EXISTS passport_number          TEXT,
   ADD COLUMN IF NOT EXISTS place_of_issue           TEXT,
   ADD COLUMN IF NOT EXISTS date_of_expiry           TEXT,
   ADD COLUMN IF NOT EXISTS passport_front_copy      TEXT,
   ADD COLUMN IF NOT EXISTS passport_back_copy       TEXT,
-  ADD COLUMN IF NOT EXISTS nature_of_business       TEXT,
-  ADD COLUMN IF NOT EXISTS main_import_product_1    TEXT,
-  ADD COLUMN IF NOT EXISTS main_import_product_2    TEXT,
   ADD COLUMN IF NOT EXISTS proof_upload             TEXT,
-  ADD COLUMN IF NOT EXISTS products_services        TEXT,
   ADD COLUMN IF NOT EXISTS business_card_upload     TEXT,
+  ADD COLUMN IF NOT EXISTS drive_passport_front_url TEXT,
+  ADD COLUMN IF NOT EXISTS drive_passport_back_url  TEXT,
+  ADD COLUMN IF NOT EXISTS drive_proof_url          TEXT,
+  ADD COLUMN IF NOT EXISTS drive_business_card_url  TEXT,
   ADD COLUMN IF NOT EXISTS poc                      TEXT,
   ADD COLUMN IF NOT EXISTS proof_import             TEXT,
   ADD COLUMN IF NOT EXISTS type_of_poi              TEXT,
-  ADD COLUMN IF NOT EXISTS bl_supplier_country      TEXT,
-  ADD COLUMN IF NOT EXISTS bl_buyer_country         TEXT,
   ADD COLUMN IF NOT EXISTS status                   TEXT,
   ADD COLUMN IF NOT EXISTS flight_hotel_code        TEXT,
   ADD COLUMN IF NOT EXISTS remarks                  TEXT,
   ADD COLUMN IF NOT EXISTS bl_status                TEXT,
   ADD COLUMN IF NOT EXISTS bb_invitation_status     TEXT,
-  ADD COLUMN IF NOT EXISTS drive_passport_front_url TEXT,
-  ADD COLUMN IF NOT EXISTS drive_passport_back_url  TEXT,
-  ADD COLUMN IF NOT EXISTS drive_proof_url          TEXT,
-  ADD COLUMN IF NOT EXISTS drive_business_card_url  TEXT;
+  ADD COLUMN IF NOT EXISTS is_active                BOOLEAN DEFAULT TRUE;
 
--- 10B. Ensure all travel record columns exist
+-- 10B. Travel Records — ensure all columns exist
 ALTER TABLE travel_records
-  ADD COLUMN IF NOT EXISTS reimbursement_amount     TEXT,
-  ADD COLUMN IF NOT EXISTS bl                       TEXT,
-  ADD COLUMN IF NOT EXISTS bl_url                   TEXT,
-  ADD COLUMN IF NOT EXISTS bl_drive_id              TEXT,
-  ADD COLUMN IF NOT EXISTS business_card_url        TEXT,
-  ADD COLUMN IF NOT EXISTS business_card_drive_id   TEXT,
-  ADD COLUMN IF NOT EXISTS invoice_amount_local     TEXT,
-  ADD COLUMN IF NOT EXISTS invoice_currency         TEXT;
+  ADD COLUMN IF NOT EXISTS initial                TEXT,
+  ADD COLUMN IF NOT EXISTS country_code           TEXT,
+  ADD COLUMN IF NOT EXISTS room_units             TEXT,
+  ADD COLUMN IF NOT EXISTS reimbursement_amount   TEXT,
+  ADD COLUMN IF NOT EXISTS invoice_amount_local   TEXT,
+  ADD COLUMN IF NOT EXISTS invoice_currency       TEXT,
+  ADD COLUMN IF NOT EXISTS bl                     TEXT,
+  ADD COLUMN IF NOT EXISTS bl_url                 TEXT,
+  ADD COLUMN IF NOT EXISTS bl_drive_id            TEXT,
+  ADD COLUMN IF NOT EXISTS business_card_url      TEXT,
+  ADD COLUMN IF NOT EXISTS business_card_drive_id TEXT;
 
--- 10C. Removed obsolete chat_messages block
+-- 10C. Users — ensure newer columns exist
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS is_active     BOOLEAN   DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP;
 
--- ───────────────────────────────────────────────────────────────────────────────────
--- END OF ENTERPRISE SCHEMA FILE
--- ───────────────────────────────────────────────────────────────────────────────────
+-- 10D. App Settings — ensure all columns exist
+ALTER TABLE app_settings
+  ADD COLUMN IF NOT EXISTS registration_sheet_name TEXT DEFAULT 'Form Responses 1',
+  ADD COLUMN IF NOT EXISTS travel_sheet_name       TEXT DEFAULT 'Travel Desk Records',
+  ADD COLUMN IF NOT EXISTS drive_folder_id         TEXT,
+  ADD COLUMN IF NOT EXISTS gas_web_app_url         TEXT;
 
--- ═════════════════════════════════════════════════════════════════════════════════════
--- 📘 APPENDIX A: SYSTEM ARCHITECTURE & DATA FLOW
--- ═════════════════════════════════════════════════════════════════════════════════════
--- The DelegateConnect CRM operates on a modern serverless architecture utilizing:
--- 1. Next.js 14 App Router (React Framework)
--- 2. Vercel (Edge computing and serverless functions)
--- 3. Neon Serverless Postgres (Database)
--- 4. Google Apps Script (Webhook pipeline for form ingestion)
--- 5. Google Drive API (For seamless file and document storage)
---
--- [Data Ingestion Pipeline]
--- The data pipeline is designed to be highly resilient. When a delegate submits
--- a form via Google Forms:
---   A) The form populates a row in the Google Sheet.
---   B) The Google Apps Script (GAS) bound to that sheet intercepts the row.
---   C) GAS processes all document uploads (Passport, B/L, Business Card),
---      moves them to a centralized Google Drive folder, and sets their permissions
---      to "Anyone with the link can view".
---   D) GAS updates the row with the newly generated `drive_*_url` columns.
---   E) The Next.js `/api/sync` cron job or manual "Sync from Sheet" button
---      pulls this data down as a JSON array.
---   F) Drizzle ORM performs a UPSERT (`onConflictDoUpdate`) using the `sr_no`
---      to guarantee zero duplication while updating any changed fields.
---
--- ═════════════════════════════════════════════════════════════════════════════════════
--- 📘 APPENDIX B: DISASTER RECOVERY PROTOCOLS
--- ═════════════════════════════════════════════════════════════════════════════════════
--- Should the system experience a catastrophic failure or data corruption:
---
--- Scenario 1: Accidental Record Deletion
--- -> Since the Google Sheet acts as the primary truth layer for registrations,
---    any accidentally deleted registration can be instantly restored by clicking
---    "Sync from Sheet" on the dashboard.
---
--- Scenario 2: Corrupt Travel Desk Data
--- -> Travel Desk data is strictly maintained in Postgres (not Google Sheets).
---    Neon Postgres provides point-in-time recovery (PITR) by default. You can
---    branch your database in the Neon Console to any point in the last 7 days
---    to instantly recover lost travel desk records.
---
--- Scenario 3: Lost Admin Credentials
--- -> If the admin account is locked out, you can re-run this `neon-schema.sql`
---    script. The `ON CONFLICT` block in Section 9 will instantly reset the 
---    admin password back to the default `manthan18` without affecting any other data.
---
--- ═════════════════════════════════════════════════════════════════════════════════════
--- 📘 APPENDIX C: DATABASE MIGRATION STRATEGY (Drizzle ORM)
--- ═════════════════════════════════════════════════════════════════════════════════════
--- This file acts as a RAW SQL alternative to `drizzle-kit push:pg`.
--- Why do we use raw SQL here instead of Drizzle Kit?
--- -> Serverless deployments sometimes fail to execute complex migration lifecycles
---    due to timeout limits on Vercel (10s on hobby tier, 15s on pro). 
--- -> By maintaining an IDEMPOTENT SQL script (Section 10), we bypass the need
---    for Drizzle Kit on Vercel. We simply push changes directly to Neon.
--- -> This guarantees 100% deployment stability and eliminates "migration lock" errors.
---
--- ═════════════════════════════════════════════════════════════════════════════════════
--- 📘 APPENDIX D: UNDERSTANDING THE TRAVEL DESK 
--- ═════════════════════════════════════════════════════════════════════════════════════
--- The Travel Desk is designed to handle thousands of concurrent flight and hotel
--- bookings for large-scale international exhibitions.
---
--- Features:
--- - Reimbursement Workflows: Built-in fields for multi-currency handling
---   (invoice_amount_local, invoice_amount_usd, invoice_currency).
--- - Status Flags: Uses color-coded statuses (Pending, Confirmed, Cancelled).
--- - Foreign Key Relationships: Linked to `registrations` via `registration_id`.
---   If a registration is wiped, the travel record remains intact but becomes
---   an "orphaned" logistics record (ON DELETE SET NULL). This ensures accounting
---   and financial data tied to a travel record is never accidentally destroyed.
---
--- ═════════════════════════════════════════════════════════════════════════════════════
--- 📘 APPENDIX E: THE CHAT MODULE
--- ═════════════════════════════════════════════════════════════════════════════════════
--- The enterprise chat module allows real-time communication between administrators
--- and internal staff.
---
--- Features:
--- - Direct Messaging: Uses the `recipient_id` column to isolate private messages
---   between specific staff members.
--- - Attachments: `file_url` allows users to upload documents directly into the chat.
--- - Edit Tracking: The `is_edited` boolean permanently tracks if a message was altered.
--- - RBAC Override: Admins have hardcoded global delete privileges over all messages,
---   ensuring complete moderation capability.
---
--- ═════════════════════════════════════════════════════════════════════════════════════
--- 📘 APPENDIX F: SECURITY AND COMPLIANCE (Audit Logs)
--- ═════════════════════════════════════════════════════════════════════════════════════
--- The `audit_log` table acts as the immutable ledger for system events.
--- 
--- Logged Actions Include:
--- 1. "create_registration"
--- 2. "bulk_import_registrations"
--- 3. "clear_all_registrations"
--- 4. "delete_registration"
--- 5. "upsert_travel_record"
--- 6. "delete_travel_record"
---
--- This satisfies basic enterprise compliance requirements by ensuring that
--- no destructive action can occur without a timestamped user footprint.
---
--- ═════════════════════════════════════════════════════════════════════════════════════
--- 📘 APPENDIX G: FREQUENTLY ASKED QUESTIONS (MAINTENANCE)
--- ═════════════════════════════════════════════════════════════════════════════════════
--- Q: Why am I getting a "Column does not exist" error during Google Sheets Sync?
--- A: You have added a new field in Next.js but forgot to run this script. Always
---    run this script in Neon after updating the schema.
---
--- Q: Can I run this script multiple times safely?
--- A: YES. The `IF NOT EXISTS` flags ensure that existing tables and columns are
---    never touched. It will only append missing elements.
---
--- Q: How do I change the admin password?
--- A: Log in with `admin` / `manthan18`. Go to the Settings panel and update it
---    via the UI.
---
--- Q: My database is running slow when loading the Travel Desk. What do I do?
--- A: You are likely hitting the Neon free tier compute limits (0.25 vCPU). 
---    Scale the compute endpoint in the Neon Dashboard to 1 vCPU or higher.
---    The SQL Indexes (Section 7) are already optimized for millions of rows.
---
--- ═════════════════════════════════════════════════════════════════════════════════════
--- 🏁 END OF DOCUMENTATION
--- ═════════════════════════════════════════════════════════════════════════════════════
---
--- -------------------------------------------------------------------------------------
--- Developer Notes: 
--- 1. All timestamps are recorded in UTC by default.
--- 2. Phone numbers should be formatted with the ISD code explicitly included.
--- 3. Any modifications to this schema should be reviewed before running in production.
--- 4. If table locks occur during high load, evaluate query patterns rather than dropping indexes.
--- 5. Google Drive URLs are public view links, ensure no highly confidential 
---    un-redacted documents are inadvertently exposed without proper access control.
--- 6. The `sr_no` is strictly mapped to the chronological entry row of the Google Form.
--- 7. If `sr_no` drifts, it may cause duplicate entries. Always ensure form logic does
---    not re-order rows dynamically.
--- 8. The database connection pooling is managed externally by Vercel/Neon; do not
---    attempt to set max_connections at the schema level.
--- 9. For advanced analytics, it is recommended to query the read-replica to avoid
---    blocking the primary writer.
--- 10. Audit logs are preserved indefinitely. In the event of storage constraints,
---     archive older audit logs to an external cold-storage system.
--- 11. When altering column types, use explicit USING clauses if casting is required.
--- 12. Ensure Vercel environment variables are synchronized with any branch updates
---     in Neon.
--- 13. Soft deletes are not currently implemented for primary registrations;
---     they are hard deleted. Audit logs provide the paper trail.
--- 14. Travel record statuses should strictly adhere to the predefined enums
---     (Pending, Confirmed, Cancelled).
--- 15. The `reimbursement` flag is distinct from `reimbursement_amount`.
---     Always check the flag before processing the monetary value.
--- 16. Chat attachments are currently not scanned for malware at the DB level;
---     ensure proper sanitization at the application tier.
--- 17. The `is_edited` flag in chat messages cannot be reverted to false once set.
--- 18. User roles are currently limited to 'admin' and 'staff'. Future expansions
---     may include 'supervisor' or 'viewer' roles.
--- 19. Ensure `bcrypt` hash cost remains at 10 or 12 for optimal security/performance balance.
--- 20. Do not manually insert rows into the `app_settings` table beyond `id=1`.
--- -------------------------------------------------------------------------------------
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- SECTION 11: UNIQUE CONSTRAINT FAILSAFES
+-- Ensure critical unique constraints exist (idempotent via DO NOTHING pattern).
+-- ═══════════════════════════════════════════════════════════════════════════════
+DO $$
+BEGIN
+  -- Ensure sr_no unique index on registrations
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+    WHERE tablename = 'registrations' AND indexname = 'registrations_sr_no_key'
+  ) THEN
+    BEGIN
+      ALTER TABLE registrations ADD CONSTRAINT registrations_sr_no_key UNIQUE (sr_no);
+    EXCEPTION WHEN duplicate_table THEN
+      NULL; -- constraint already exists
+    END;
+  END IF;
+END $$;
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- ✅ SCHEMA COMPLETE
+-- Login: admin / manthan18
+-- All tables, indexes, triggers, and default data are ready.
+-- ═══════════════════════════════════════════════════════════════════════════════

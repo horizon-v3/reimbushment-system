@@ -5,6 +5,7 @@ import { travelRecords, appSettings, auditLog } from "@/db/schema";
 import { asc, sql, eq } from "drizzle-orm";
 import {
   backupTravelRecordToSheet,
+  backupToTravelSheet2,
   deleteSheetRecord,
   deleteDriveFolder,
 } from "@/lib/gas-client";
@@ -283,7 +284,20 @@ async function syncToSheet(
   if (!res.ok) {
     console.error("[syncToSheet] GAS returned error:", res.error);
   } else {
-    console.log("[syncToSheet] ✅ Sheet updated. Fields written:", (res as Record<string, unknown>).updatedFields);
+    console.log("[syncToSheet] ✅ Sheet 1 updated. Fields written:", (res as Record<string, unknown>).updatedFields);
+  }
+
+  // Also sync to Sheet 2 (formatted print view)
+  const res2 = await backupToTravelSheet2(payload, {
+    sheetId,
+    sheetName: "Travel Desk Sheet 2",
+    gasUrl,
+  });
+
+  if (!res2.ok) {
+    console.error("[syncToSheet] Sheet 2 error:", (res2 as Record<string, unknown>).error);
+  } else {
+    console.log("[syncToSheet] ✅ Sheet 2 updated.");
   }
 }
 

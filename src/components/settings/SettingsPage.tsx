@@ -144,6 +144,40 @@ export default function SettingsPage() {
   const [gasStatus, setGasStatus] = useState<"idle" | "ok" | "error">("idle");
   const [pingMsg, setPingMsg] = useState("");
   const [openSection, setOpenSection] = useState<string>("quicksetup");
+  const [creatingSheet, setCreatingSheet] = useState(false);
+  const [sheetCreateMsg, setSheetCreateMsg] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const handleCreateTravelSheet = async () => {
+    if (!settings.gas_web_app_url || !settings.registration_sheet_id) {
+      toast.error("Save your GAS URL and Sheet ID first before creating the sheet.");
+      return;
+    }
+    setCreatingSheet(true);
+    setSheetCreateMsg(null);
+    try {
+      const res = await fetch("/api/settings/create-sheet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          gas_web_app_url:       settings.gas_web_app_url,
+          registration_sheet_id: settings.registration_sheet_id,
+          sheet_name:            "Travel Desk Sheet 2",
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setSheetCreateMsg({ ok: true, message: data.message ?? "Sheet 2 created successfully!" });
+        toast.success("✅ Travel Desk Sheet 2 created!");
+      } else {
+        setSheetCreateMsg({ ok: false, message: data.error ?? "Failed to create sheet" });
+        toast.error(data.error ?? "Failed to create sheet");
+      }
+    } catch (e) {
+      toast.error("Request failed");
+    } finally {
+      setCreatingSheet(false);
+    }
+  };
 
   // ── Connection verification state ─────────────────────────────────────────
   type ConnStatus = { ok: boolean; message: string };
