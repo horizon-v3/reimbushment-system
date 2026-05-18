@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { travelRecords, appSettings, auditLog } from "@/db/schema";
 import { asc, sql } from "drizzle-orm";
-import { backupTravelRecordToSheet, exportSheetToExcel } from "@/lib/gas-client";
+import { backupTravelRecordToSheet, exportSheetToExcel, deleteDriveFolder } from "@/lib/gas-client";
 import { eq } from "drizzle-orm";
 import type { Session } from "next-auth";
 
@@ -156,6 +156,16 @@ export async function DELETE(request: Request) {
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   try {
+    const [existing] = await db.select().from(travelRecords).where(eq(travelRecords.id, id)).limit(1);
+    
+    if (existing) {
+      const delegateName = `${existing.responsesSrNo ?? ""} ${existing.firstName ?? ""} ${existing.lastName ?? ""}`.trim();
+      const subFolderName = delegateName || "Delegates";
+      
+      // Delete drive folder silently
+      deleteDriveFolder(subFolderName).catch(console.error);
+    }
+
     await db.delete(travelRecords).where(eq(travelRecords.id, id));
 
     await db.insert(auditLog).values({

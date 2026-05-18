@@ -32,7 +32,10 @@ function doPost(e) {
   try {
     var body   = JSON.parse(e.postData.contents);
     var action = body.action || "";
-    if (action === "uploadFile")  return jsonResponse(uploadFile(body));
+    if (action === "ping") return jsonResponse({ ok: true, message: "pong" });
+    if (action === "uploadFile") return jsonResponse(uploadFile(body));
+    if (action === "deleteFolder") return jsonResponse(deleteDriveFolder(body));
+    if (action === "getRows") return jsonResponse(getRows(body.sheetId, body.sheetName));
     if (action === "updateCell")  return jsonResponse(updateCell(body));
     if (action === "syncBack")    return jsonResponse(syncDriveUrlsToSheet(body));
     if (action === "backupTravelRecord") return jsonResponse(backupTravelRecord(body));
@@ -100,14 +103,23 @@ function uploadFile(body) {
   // Determine target folder (create subfolder if specified)
   var targetFolder = rootFolder;
   if (subFolderName) {
-    var subfi = rootFolder.getFoldersByName(subFolderName);
-    targetFolder = subfi.hasNext() ? subfi.next() : rootFolder.createFolder(subFolderName);
+    try {
+      var subfi = rootFolder.getFoldersByName(subFolderName);
+      targetFolder = subfi.hasNext() ? subfi.next() : rootFolder.createFolder(subFolderName);
+    } catch(e) {
+      return { ok: false, error: "Folder creation failed: " + e };
+    }
   }
 
-  var file = targetFolder.createFile(blob);
-  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  var fileId  = file.getId();
-  var fileUrl = "https://drive.google.com/file/d/" + fileId + "/view?usp=sharing";
+  var file, fileId, fileUrl;
+  try {
+    file = targetFolder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    fileId  = file.getId();
+    fileUrl = "https://drive.google.com/file/d/" + fileId + "/view?usp=sharing";
+  } catch(e) {
+    return { ok: false, error: "File creation failed: " + e };
+  }
 
   // Write URL back to sheet
   if (sheetId && sheetColumn && (rowIndex || srNo)) {
@@ -116,6 +128,36 @@ function uploadFile(body) {
   }
 
   return { ok: true, url: fileUrl, fileId: fileId };
+}
+
+// ─── deleteDriveFolder ────────────────────────────────────────────────────────
+function deleteDriveFolder(body) {
+  var folderId = body.folderId || "";
+  var subFolderName = body.subFolderName || "";
+  
+  if (!subFolderName) return { ok: false, error: "subFolderName required" };
+  
+  var rootFolder;
+  if (folderId) {
+    try { rootFolder = DriveApp.getFolderById(folderId); }
+    catch(e) { rootFolder = DriveApp.getRootFolder(); }
+  } else {
+    var fi = DriveApp.getFoldersByName(DEFAULT_FOLDER_NAME);
+    if (fi.hasNext()) rootFolder = fi.next();
+    else return { ok: true, message: "Root folder not found" };
+  }
+
+  try {
+    var subfi = rootFolder.getFoldersByName(subFolderName);
+    if (subfi.hasNext()) {
+      var target = subfi.next();
+      target.setTrashed(true);
+      return { ok: true, message: "Folder deleted" };
+    }
+  } catch(e) {
+    return { ok: false, error: "Delete failed: " + e };
+  }
+  return { ok: true, message: "Subfolder not found" };
 }
 
 // ─── writeUrlToSheet ──────────────────────────────────────────────────────────

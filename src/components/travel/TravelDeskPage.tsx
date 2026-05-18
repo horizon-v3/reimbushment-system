@@ -63,8 +63,17 @@ export default function TravelDeskPage({ isAdmin = false, isSupervisor = false }
   const reset = () => { setForm(EMPTY_FORM); setFiles({}); setEditId(null); };
 
   const onSelectDelegate = useCallback((id: string) => {
+    const existing = records.find(x => String(x.registration_id) === id);
+    if (existing) {
+      editRecord(existing);
+      toast.info("Editing existing travel record for this delegate.");
+      return;
+    }
+
     const r = regs.find(x => String(x.id) === id);
     if (!r) return;
+    
+    setEditId(null);
     setForm(f => ({
       ...f, registration_id: id,
       responses_sr_no: String(r.sr_no ?? ""),
@@ -80,7 +89,7 @@ export default function TravelDeskPage({ isAdmin = false, isSupervisor = false }
       passport_url: r.drive_passport_front_url ?? r.passport_front_copy ?? "",
       business_card_url: r.drive_business_card_url ?? r.business_card_upload ?? "",
     }));
-  }, [regs]);
+  }, [regs, records]);
 
   const uploadFile = async (file: File, docType: string) => {
     const delegateName = `${form.responses_sr_no} ${form.first_name} ${form.last_name}`;
@@ -115,7 +124,7 @@ export default function TravelDeskPage({ isAdmin = false, isSupervisor = false }
       }
     }
     
-    if (editId && isSupervisor && !isAdmin) {
+    if (editId) {
       const p = window.prompt('You are about to overwrite data. Type "CONFIRM" to proceed:');
       if (p?.trim().toUpperCase() !== "CONFIRM") {
         return toast.error("Overwrite cancelled. You must type CONFIRM to save.");

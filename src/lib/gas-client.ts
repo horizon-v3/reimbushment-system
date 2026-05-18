@@ -143,6 +143,14 @@ export async function exportSheetToExcel(
   });
 }
 
+// ─── Delete folder from Google Drive ──────────────────────────────────────────
+export async function deleteDriveFolder(subFolderName: string) {
+  return callGas({
+    action: "deleteFolder",
+    subFolderName,
+  });
+}
+
 // ─── Ping GAS ─────────────────────────────────────────────────────────────────
 export async function pingGas() {
   return callGasGet<{ message: string }>({ action: "ping" });
