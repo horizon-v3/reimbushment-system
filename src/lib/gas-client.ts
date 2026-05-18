@@ -11,13 +11,17 @@ export type GasResponse<T = unknown> = {
 } & T;
 
 async function getGasSettings(): Promise<{ url: string | null; folderId: string | null; sheetId: string | null }> {
-  if (GAS_URL) return { url: GAS_URL, folderId: null, sheetId: null };
   try {
-    const res = await fetch("/api/sync");
+    const res = await fetch("/api/settings");
     const data = await res.json();
-    return { url: data.gasWebAppUrl || null, folderId: data.driveFolderId || null, sheetId: data.sheetId || null };
+    const settings = data.settings || {};
+    return { 
+      url: settings.gasWebAppUrl || GAS_URL || null, 
+      folderId: settings.driveFolderId || null, 
+      sheetId: settings.registrationSheetId || null 
+    };
   } catch (err) {
-    return { url: null, folderId: null, sheetId: null };
+    return { url: GAS_URL || null, folderId: null, sheetId: null };
   }
 }
 

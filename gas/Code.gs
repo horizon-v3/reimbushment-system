@@ -179,6 +179,9 @@ function writeUrlToSheet(sheetId, sheetName, sheetColumn, rowIndex, srNo, url) {
   // Create column if it doesn't exist
   if (colIdx === -1) {
     colIdx = lastCol + 1;
+    if (colIdx > sheet.getMaxColumns()) {
+      sheet.insertColumnAfter(sheet.getMaxColumns());
+    }
     sheet.getRange(1, colIdx).setValue(sheetColumn);
     sheet.getRange(1, colIdx).setFontWeight("bold").setBackground("#f3f3f3");
   }
@@ -233,6 +236,9 @@ function updateCell(body) {
   
   if (colIdx === -1) {
     colIdx = lastCol + 1;
+    if (colIdx > sheet.getMaxColumns()) {
+      sheet.insertColumnAfter(sheet.getMaxColumns());
+    }
     sheet.getRange(1, colIdx).setValue(column);
     sheet.getRange(1, colIdx).setFontWeight("bold").setBackground("#f3f3f3");
   }
@@ -296,8 +302,12 @@ function ensureHeaders(sheet, requiredHeaders) {
 
   if (missingHeaders.length > 0) {
     var startCol = lastCol + 1;
+    var requiredCols = startCol + missingHeaders.length - 1;
+    if (requiredCols > sheet.getMaxColumns()) {
+      sheet.insertColumnsAfter(sheet.getMaxColumns(), requiredCols - sheet.getMaxColumns());
+    }
     sheet.getRange(1, startCol, 1, missingHeaders.length).setValues([missingHeaders]);
-    sheet.getRange(1, 1, 1, startCol + missingHeaders.length - 1).setFontWeight("bold").setBackground("#f3f3f3");
+    sheet.getRange(1, 1, 1, requiredCols).setFontWeight("bold").setBackground("#f3f3f3");
   }
 }
 
