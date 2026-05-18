@@ -381,7 +381,8 @@ function backupTravelRecord(body) {
 
   var srCol = -1;
   for (var j = 0; j < headers.length; j++) {
-    if (String(headers[j]).trim() === "Sr No") { srCol = j + 1; break; }
+    var h = String(headers[j]).trim().toLowerCase();
+    if (h === "sr no" || h === "sr_no" || h === "sr. no") { srCol = j + 1; break; }
   }
 
   if (srCol === -1) return { ok: false, error: "Sr No column not found" };
@@ -475,7 +476,8 @@ function backupRegistration(body) {
   var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   var srCol = -1;
   for (var j = 0; j < headers.length; j++) {
-    if (String(headers[j]).trim() === "Sr No") { srCol = j + 1; break; }
+    var h = String(headers[j]).trim().toLowerCase();
+    if (h === "sr no" || h === "sr_no" || h === "sr. no") { srCol = j + 1; break; }
   }
 
   if (srCol === -1) return { ok: false, error: "Sr No column not found" };

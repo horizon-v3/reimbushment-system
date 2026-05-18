@@ -248,7 +248,8 @@ async function triggerTravelGasBackup(
   data: Record<string, unknown>,
   settings: typeof appSettings.$inferSelect | undefined
 ) {
-  if (!settings?.gasWebAppUrl) return;
+  const gasUrl = settings?.gasWebAppUrl || process.env.NEXT_PUBLIC_GAS_WEB_APP_URL;
+  if (!gasUrl) return;
 
   const payload = Object.fromEntries(
     Object.entries(data).map(([k, v]) => [toSnake(k), v])
