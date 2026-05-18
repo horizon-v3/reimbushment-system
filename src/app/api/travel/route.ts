@@ -256,14 +256,14 @@ async function triggerTravelGasBackup(
   );
 
   await backupTravelRecordToSheet(payload, {
-    sheetId: settings.registrationSheetId ?? undefined,
-    sheetName: settings.travelSheetName ?? undefined,
+    sheetId: settings?.registrationSheetId ?? undefined,
+    sheetName: settings?.travelSheetName ?? undefined,
   });
 
-  if (settings.registrationSheetId) {
+  if (settings?.registrationSheetId) {
     await exportSheetToExcel(settings.registrationSheetId, {
       fileName: "DelegateConnect_TravelDesk",
-      folderId: settings.driveFolderId ?? undefined,
+      folderId: settings?.driveFolderId ?? undefined,
     });
   }
 }
