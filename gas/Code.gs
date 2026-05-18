@@ -81,6 +81,9 @@ function handleRequest(e, method) {
       case "syncBack":
         response = executeWithLock(function() { return handleSyncDriveUrlsToSheet(body); });
         break;
+      case "deleteRecord":
+        response = executeWithLock(function() { return handleDeleteRecord(body); });
+        break;
       case "backupTravelRecord":
         response = executeWithLock(function() { return handleBackupTravelRecord(body); });
         break;
@@ -277,6 +280,32 @@ function handleDeleteDriveFolder(body) {
   } catch (err) {
     return { ok: false, error: "Delete operation failed: " + String(err) };
   }
+}
+
+/**
+ * Deletes a row from the spreadsheet based on Sr No
+ */
+function handleDeleteRecord(body) {
+  var sheetId   = body.sheetId;
+  var sheetName = body.sheetName || CONFIG.DEFAULT_TRAVEL_SHEET;
+  var srNo      = body.srNo;
+
+  if (!sheetId || !srNo) return { ok: false, error: "sheetId and srNo required" };
+
+  var ss = SpreadsheetApp.openById(sheetId);
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return { ok: false, error: "Sheet not found" };
+
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var srCol = resolveSrNoColumnIndex(headers);
+  if (srCol === -1) return { ok: false, error: "Sr No column not found" };
+
+  var targetRow = resolveRowBySrNo(sheet, srCol, srNo);
+  if (targetRow) {
+    sheet.deleteRow(targetRow);
+    return { ok: true, message: "Row deleted successfully" };
+  }
+  return { ok: false, error: "Row not found" };
 }
 
 /**

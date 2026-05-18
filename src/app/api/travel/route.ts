@@ -164,6 +164,21 @@ export async function DELETE(request: Request) {
       
       // Delete drive folder silently
       deleteDriveFolder(subFolderName).catch(console.error);
+
+      // Tell GAS to delete the row from the Google Sheet
+      const [settings] = await db.select().from(appSettings).where(eq(appSettings.id, 1)).limit(1);
+      if (settings?.gasWebAppUrl && settings?.registrationSheetId && existing.responsesSrNo) {
+        fetch(settings.gasWebAppUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "deleteRecord",
+            sheetId: settings.registrationSheetId,
+            sheetName: settings.travelSheetName || "Travel Desk Records",
+            srNo: existing.responsesSrNo
+          })
+        }).catch(console.error);
+      }
     }
 
     await db.delete(travelRecords).where(eq(travelRecords.id, id));

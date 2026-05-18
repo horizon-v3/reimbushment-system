@@ -239,6 +239,7 @@ CREATE TABLE IF NOT EXISTS travel_records (
   passport_url           TEXT,
   voucher_url            TEXT,
   business_card_url      TEXT,
+  bl_url                 TEXT,
   
   -- Google Drive IDs (Used by the API to manipulate files directly if needed)
   ticket_drive_id        TEXT,
@@ -247,6 +248,7 @@ CREATE TABLE IF NOT EXISTS travel_records (
   passport_drive_id      TEXT,
   voucher_drive_id       TEXT,
   business_card_drive_id TEXT,
+  bl_drive_id            TEXT,
   
   created_at             TIMESTAMP DEFAULT NOW(),
   updated_at             TIMESTAMP DEFAULT NOW()
@@ -423,17 +425,13 @@ ALTER TABLE travel_records
   ADD COLUMN IF NOT EXISTS reimbursement_amount     TEXT,
   ADD COLUMN IF NOT EXISTS bl                       TEXT,
   ADD COLUMN IF NOT EXISTS bl_url                   TEXT,
+  ADD COLUMN IF NOT EXISTS bl_drive_id              TEXT,
   ADD COLUMN IF NOT EXISTS business_card_url        TEXT,
   ADD COLUMN IF NOT EXISTS business_card_drive_id   TEXT,
   ADD COLUMN IF NOT EXISTS invoice_amount_local     TEXT,
   ADD COLUMN IF NOT EXISTS invoice_currency         TEXT;
 
--- 10C. Ensure chat message columns exist
-ALTER TABLE chat_messages
-  ADD COLUMN IF NOT EXISTS recipient_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-  ADD COLUMN IF NOT EXISTS file_url TEXT,
-  ADD COLUMN IF NOT EXISTS file_name TEXT,
-  ADD COLUMN IF NOT EXISTS is_edited BOOLEAN DEFAULT false;
+-- 10C. Removed obsolete chat_messages block
 
 -- ───────────────────────────────────────────────────────────────────────────────────
 -- END OF ENTERPRISE SCHEMA FILE

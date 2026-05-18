@@ -133,6 +133,7 @@ export const travelRecords = pgTable("travel_records", {
   passportDriveId: text("passport_drive_id"),
   voucherDriveId: text("voucher_drive_id"),
   businessCardDriveId: text("business_card_drive_id"),
+  blDriveId: text("bl_drive_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
