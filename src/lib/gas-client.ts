@@ -1,69 +1,95 @@
 /**
- * Google Apps Script Web App Client
- * Calls the deployed GAS Web App URL for Drive/Sheets operations
+ * ============================================================================
+ * ENTERPRISE GOOGLE APPS SCRIPT CLIENT
+ * ============================================================================
+ * This module is the single source of truth for all communication between the
+ * Next.js server/client and the Google Apps Script Web App.
+ *
+ * KEY DESIGN DECISIONS:
+ * - All server-side calls (from route.ts) use the GAS_URL directly from env.
+ * - Client-side calls (from browser) can fetch settings dynamically.
+ * - All field mappings are centralized here, preventing drift.
+ * ============================================================================
  */
 
-const GAS_URL = process.env.NEXT_PUBLIC_GAS_WEB_APP_URL || "";
+// Environment variable — works on both server and client
+const GAS_URL = process.env.NEXT_PUBLIC_GAS_WEB_APP_URL ?? "";
 
-export type GasResponse<T = unknown> = {
+export type GasResponse<T = Record<string, unknown>> = {
   ok: boolean;
   error?: string;
 } & T;
 
-async function getGasSettings(): Promise<{ url: string | null; folderId: string | null; sheetId: string | null }> {
+// ─── Core GAS caller (server-safe, uses absolute GAS_URL directly) ─────────
+export async function callGasDirect<T = Record<string, unknown>>(
+  body: Record<string, unknown>,
+  gasUrl?: string
+): Promise<GasResponse<T>> {
+  const url = gasUrl || GAS_URL;
+  if (!url) {
+    console.error("[GAS-CLIENT] No GAS URL configured. Set NEXT_PUBLIC_GAS_WEB_APP_URL.");
+    return { ok: false, error: "GAS_WEB_APP_URL not configured." } as GasResponse<T>;
+  }
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      // GAS Web Apps require Content-Type: text/plain to avoid CORS preflight
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.error("[GAS-CLIENT] HTTP Error:", res.status, text.slice(0, 300));
+      return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 200)}` } as GasResponse<T>;
+    }
+
+    const data = await res.json();
+    return data as GasResponse<T>;
+  } catch (err) {
+    console.error("[GAS-CLIENT] Fetch failed:", err);
+    return { ok: false, error: String(err) } as GasResponse<T>;
+  }
+}
+
+// ─── Client-side only: fetch GAS URL from settings endpoint ────────────────
+async function getGasSettingsFromApi(): Promise<{
+  url: string | null;
+  folderId: string | null;
+  sheetId: string | null;
+}> {
   try {
     const res = await fetch("/api/settings");
+    if (!res.ok) throw new Error("Settings fetch failed");
     const data = await res.json();
     const settings = data.settings || {};
-    return { 
-      url: settings.gasWebAppUrl || GAS_URL || null, 
-      folderId: settings.driveFolderId || null, 
-      sheetId: settings.registrationSheetId || null 
+    return {
+      url: settings.gasWebAppUrl || GAS_URL || null,
+      folderId: settings.driveFolderId || null,
+      sheetId: settings.registrationSheetId || null,
     };
-  } catch (err) {
+  } catch {
     return { url: GAS_URL || null, folderId: null, sheetId: null };
   }
 }
 
-async function callGas<T = unknown>(body: Record<string, unknown>): Promise<GasResponse<T>> {
-  const settings = await getGasSettings();
+// ─── Client-side GAS call (used from browser components only) ──────────────
+async function callGasClient<T = Record<string, unknown>>(
+  body: Record<string, unknown>
+): Promise<GasResponse<T>> {
+  const settings = await getGasSettingsFromApi();
   if (!settings.url) {
-    return { ok: false, error: "GAS_WEB_APP_URL not configured in Env or Settings" } as GasResponse<T>;
+    return { ok: false, error: "GAS_WEB_APP_URL not configured." } as GasResponse<T>;
   }
-  try {
-    // Inject folderId into body if available and not explicitly provided
-    if (settings.folderId && !body.folderId) {
-      body.folderId = settings.folderId;
-    }
-    const res = await fetch(settings.url, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" }, // GAS quirk
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    return data as GasResponse<T>;
-  } catch (err) {
-    return { ok: false, error: String(err) } as GasResponse<T>;
+  // Inject folderId if available and not already set
+  if (settings.folderId && !body.folderId) {
+    body.folderId = settings.folderId;
   }
+  return callGasDirect<T>(body, settings.url);
 }
 
-async function callGasGet<T = unknown>(params: Record<string, string>): Promise<GasResponse<T>> {
-  const settings = await getGasSettings();
-  if (!settings.url) {
-    return { ok: false, error: "GAS_WEB_APP_URL not configured in Env or Settings" } as GasResponse<T>;
-  }
-  try {
-    const url = new URL(settings.url);
-    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-    const res = await fetch(url.toString());
-    const data = await res.json();
-    return data as GasResponse<T>;
-  } catch (err) {
-    return { ok: false, error: String(err) } as GasResponse<T>;
-  }
-}
-
-// ─── Upload file to Google Drive via GAS ──────────────────────────────────────
+// ─── Upload file to Google Drive (CLIENT-SIDE only) ────────────────────────
 export async function uploadFileToDrive(
   file: File,
   options: {
@@ -77,96 +103,136 @@ export async function uploadFileToDrive(
   const safeName = sanitizeFileName(
     `${options.subFolderName || ""} ${options.delegateName || ""} ${options.docType || ""} - ${file.name}`
   );
-  
-  // Map docType (e.g. "ticket") to Sheet Column (e.g. "Ticket File")
-  let sheetColumn = "";
-  if (options.docType) {
-    const map: Record<string, string> = {
-      "ticket": "Ticket File",
-      "invoice": "Invoice File",
-      "visa": "Visa File",
-      "passport": "Passport File",
-      "voucher": "Voucher File",
-      "business_card": "Business Card File",
-      "bl": "B/L File"
-    };
-    sheetColumn = map[options.docType.toLowerCase()] || `${options.docType} File`;
-  }
 
-  const settings = await getGasSettings();
+  const docTypeToColumn: Record<string, string> = {
+    ticket:        "Ticket File",
+    invoice:       "Invoice File",
+    visa:          "Visa File",
+    passport:      "Passport File",
+    voucher:       "Voucher File",
+    business_card: "Business Card File",
+    bl:            "B/L File",
+  };
 
-  return callGas({
-    action: "uploadFile",
-    fileName: safeName,
-    mimeType: file.type || "application/octet-stream",
+  const sheetColumn = options.docType
+    ? (docTypeToColumn[options.docType.toLowerCase()] ?? `${options.docType} File`)
+    : "";
+
+  const settings = await getGasSettingsFromApi();
+
+  return callGasClient({
+    action:         "uploadFile",
+    fileName:       safeName,
+    mimeType:       file.type || "application/octet-stream",
     base64Data,
-    subFolderName: options.subFolderName,
-    delegateName: options.delegateName,
-    sheetId: settings.sheetId,
-    sheetColumn: sheetColumn,
-    srNo: options.srNo
+    subFolderName:  options.subFolderName,
+    delegateName:   options.delegateName,
+    sheetId:        settings.sheetId,
+    sheetColumn,
+    srNo:           options.srNo,
   });
 }
 
-// ─── Backup registration to Google Sheet ──────────────────────────────────────
+// ─── Backup registration to Google Sheet (CLIENT-SIDE) ─────────────────────
 export async function backupRegistrationToSheet(
   registration: Record<string, unknown>,
   options: { sheetId?: string; sheetName?: string } = {}
 ) {
-  return callGas({
-    action: "backupRegistration",
+  return callGasClient({
+    action:      "backupRegistration",
     registration,
-    sheetId: options.sheetId,
-    sheetName: options.sheetName,
+    sheetId:     options.sheetId,
+    sheetName:   options.sheetName,
   });
 }
 
-// ─── Backup travel record to Google Sheet ─────────────────────────────────────
+// ─── SERVER-SIDE: Backup travel record directly to GAS ────────────────────
+// Called from route.ts after every CREATE / UPDATE operation.
+// Sends the full flattened record to GAS with the correct sheetId.
 export async function backupTravelRecordToSheet(
   travelRecord: Record<string, unknown>,
-  options: { sheetId?: string; sheetName?: string } = {}
+  options: { sheetId?: string; sheetName?: string; gasUrl?: string } = {}
 ) {
-  return callGas({
-    action: "backupTravelRecord",
-    travelRecord,
-    sheetId: options.sheetId,
-    sheetName: options.sheetName,
+  const gasUrl = options.gasUrl || GAS_URL;
+
+  console.log("[GAS-CLIENT] backupTravelRecordToSheet →", {
+    gasUrl: gasUrl ? "✓ set" : "✗ MISSING",
+    sheetId: options.sheetId ? "✓ set" : "✗ MISSING",
+    srNo: travelRecord.responses_sr_no,
   });
+
+  return callGasDirect(
+    {
+      action:       "backupTravelRecord",
+      travelRecord: travelRecord,
+      sheetId:      options.sheetId,
+      sheetName:    options.sheetName || "Travel Desk Records",
+    },
+    gasUrl
+  );
 }
 
-// ─── Export sheet to Excel in Drive ───────────────────────────────────────────
+// ─── Export sheet to Excel in Drive (SERVER-SIDE) ─────────────────────────
 export async function exportSheetToExcel(
   sheetId: string,
-  options: { fileName?: string; folderId?: string } = {}
+  options: { fileName?: string; folderId?: string; gasUrl?: string } = {}
 ) {
-  return callGas<{ fileId: string; downloadLink: string; webViewLink: string }>({
-    action: "exportToExcel",
-    sheetId,
-    fileName: options.fileName,
-    folderId: options.folderId,
-  });
+  const gasUrl = options.gasUrl || GAS_URL;
+  return callGasDirect<{ fileId: string; downloadLink: string; webViewLink: string }>(
+    {
+      action:   "exportToExcel",
+      sheetId,
+      fileName: options.fileName,
+      folderId: options.folderId,
+    },
+    gasUrl
+  );
 }
 
-// ─── Delete folder from Google Drive ──────────────────────────────────────────
-export async function deleteDriveFolder(subFolderName: string) {
-  return callGas({
-    action: "deleteFolder",
-    subFolderName,
-  });
+// ─── Delete a Drive subfolder (SERVER-SIDE) ────────────────────────────────
+export async function deleteDriveFolder(
+  subFolderName: string,
+  options: { folderId?: string; gasUrl?: string } = {}
+) {
+  const gasUrl = options.gasUrl || GAS_URL;
+  return callGasDirect(
+    {
+      action: "deleteFolder",
+      subFolderName,
+      folderId: options.folderId,
+    },
+    gasUrl
+  );
 }
 
-// ─── Ping GAS ─────────────────────────────────────────────────────────────────
+// ─── Delete a row from the sheet (SERVER-SIDE) ────────────────────────────
+export async function deleteSheetRecord(
+  srNo: string,
+  options: { sheetId?: string; sheetName?: string; gasUrl?: string } = {}
+) {
+  const gasUrl = options.gasUrl || GAS_URL;
+  return callGasDirect(
+    {
+      action:    "deleteRecord",
+      srNo,
+      sheetId:   options.sheetId,
+      sheetName: options.sheetName || "Travel Desk Records",
+    },
+    gasUrl
+  );
+}
+
+// ─── Ping GAS (CLIENT-SIDE) ───────────────────────────────────────────────
 export async function pingGas() {
-  return callGasGet<{ message: string }>({ action: "ping" });
+  return callGasClient<{ message: string }>({ action: "ping" });
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      // Remove data URL prefix
       const base64 = result.split(",")[1] || result;
       resolve(base64);
     };

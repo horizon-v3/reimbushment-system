@@ -704,13 +704,13 @@ function ensureSheetHeadersDynamically(sheet, requiredHeaders) {
   var existingHeaders = [];
   if (lastCol > 0) {
     existingHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
-      return String(h).trim();
+      return String(h).trim().toLowerCase();
     });
   }
 
   var missingHeaders = [];
   requiredHeaders.forEach(function(h) {
-    if (existingHeaders.indexOf(h) === -1) {
+    if (existingHeaders.indexOf(String(h).trim().toLowerCase()) === -1) {
       missingHeaders.push(h);
     }
   });
