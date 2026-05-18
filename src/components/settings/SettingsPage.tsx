@@ -146,6 +146,8 @@ export default function SettingsPage() {
   const [openSection, setOpenSection] = useState<string>("quicksetup");
   const [creatingSheet, setCreatingSheet] = useState(false);
   const [sheetCreateMsg, setSheetCreateMsg] = useState<{ ok: boolean; message: string } | null>(null);
+  const [syncingSheet2, setSyncingSheet2] = useState(false);
+  const [syncSheet2Msg, setSyncSheet2Msg] = useState<{ ok: boolean; message: string } | null>(null);
 
   const handleCreateTravelSheet = async () => {
     if (!settings.gas_web_app_url || !settings.registration_sheet_id) {
@@ -176,6 +178,25 @@ export default function SettingsPage() {
       toast.error("Request failed");
     } finally {
       setCreatingSheet(false);
+    }
+  };
+
+  const handleSyncSheet2 = async () => {
+    setSyncingSheet2(true);
+    setSyncSheet2Msg(null);
+    try {
+      const res = await fetch("/api/travel/sync-sheet2", { method: "POST" });
+      const data = await res.json();
+      setSyncSheet2Msg({ ok: data.ok, message: data.message ?? (data.error ?? "Unknown error") });
+      if (data.ok) {
+        toast.success(`✅ ${data.message}`);
+      } else {
+        toast.error(data.error ?? "Sync failed");
+      }
+    } catch {
+      toast.error("Request failed");
+    } finally {
+      setSyncingSheet2(false);
     }
   };
 
@@ -657,6 +678,38 @@ export default function SettingsPage() {
             value={settings.travel_sheet_name}
             onChange={v => setSettings(s => ({ ...s, travel_sheet_name: v }))}
             placeholder="Travel Desk Records" />
+        </div>
+
+        {/* ── Sheet 2 Actions ── */}
+        <div className="mt-5 p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-primary)]">
+          <p className="text-[0.875rem] font-semibold text-[var(--color-text-primary)] mb-1 flex items-center gap-2">
+            <Save size={14} className="text-[#34a853]" /> Travel Desk Print Sheet (Sheet 2)
+          </p>
+          <p className="text-[0.8rem] text-[var(--color-text-tertiary)] mb-3 leading-relaxed">
+            Creates a formatted tab <strong className="text-[var(--color-text-secondary)]">"Travel Desk Sheet 2"</strong> with exact columns:
+            Sr.No, Hotel, Room, Flights, Invoice, Ticket, Visa, Status. 
+            Use <strong>Sync All</strong> to backfill existing records.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <button className="btn-secondary py-2 px-4 font-semibold" onClick={handleCreateTravelSheet} disabled={creatingSheet}>
+              <RefreshCw size={14} className={creatingSheet ? "animate-spin" : ""} />
+              {creatingSheet ? "Creating…" : "Create / Reset Sheet 2"}
+            </button>
+            <button className="btn-secondary py-2 px-4 font-semibold" onClick={handleSyncSheet2} disabled={syncingSheet2}>
+              <RefreshCw size={14} className={syncingSheet2 ? "animate-spin" : ""} />
+              {syncingSheet2 ? "Syncing…" : "Sync All Records → Sheet 2"}
+            </button>
+          </div>
+          {sheetCreateMsg && (
+            <p className={`mt-2 text-[0.82rem] font-medium flex items-center gap-1.5 ${sheetCreateMsg.ok ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}`}>
+              {sheetCreateMsg.ok ? <CheckCircle2 size={13}/> : <AlertCircle size={13}/>} {sheetCreateMsg.message}
+            </p>
+          )}
+          {syncSheet2Msg && (
+            <p className={`mt-2 text-[0.82rem] font-medium flex items-center gap-1.5 ${syncSheet2Msg.ok ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}`}>
+              {syncSheet2Msg.ok ? <CheckCircle2 size={13}/> : <AlertCircle size={13}/>} {syncSheet2Msg.message}
+            </p>
+          )}
         </div>
       </Section>
 
