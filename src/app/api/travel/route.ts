@@ -255,13 +255,19 @@ async function triggerTravelGasBackup(
     Object.entries(data).map(([k, v]) => [toSnake(k), v])
   );
 
-  await backupTravelRecordToSheet(payload, {
+  const res = await backupTravelRecordToSheet(payload, {
     sheetId: settings?.registrationSheetId ?? undefined,
     sheetName: settings?.travelSheetName ?? undefined,
   });
 
+  if (!res.ok) {
+    console.error("[triggerTravelGasBackup] Failed:", res.error);
+  } else {
+    console.log("[triggerTravelGasBackup] Success. Sheet updated.");
+  }
+
   if (settings?.registrationSheetId) {
-    await exportSheetToExcel(settings.registrationSheetId, {
+    await exportSheetToExcel(settings?.registrationSheetId ?? "", {
       fileName: "DelegateConnect_TravelDesk",
       folderId: settings?.driveFolderId ?? undefined,
     });

@@ -462,12 +462,13 @@ function handleBackupTravelRecord(body) {
 
   var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   var srNo = record.responses_sr_no;
-  if (!srNo) return { ok: false, error: "Record missing responses_sr_no" };
-
   var srCol = resolveSrNoColumnIndex(headers);
-  if (srCol === -1) return { ok: false, error: "Sr No column not found" };
+  var targetRow = null;
 
-  var targetRow = resolveRowBySrNo(sheet, srCol, srNo);
+  if (srNo && srCol > 0) {
+    targetRow = resolveRowBySrNo(sheet, srCol, srNo);
+  }
+
   if (!targetRow) {
     targetRow = sheet.getLastRow() + 1; // Append as new row
   }
@@ -506,7 +507,6 @@ function handleBackupRegistration(body) {
   }
 
   var srNo = record.sr_no;
-  if (!srNo) return { ok: false, error: "Record missing sr_no" };
 
   var recordMap = {
     "Sr No": record.sr_no,
@@ -550,9 +550,12 @@ function handleBackupRegistration(body) {
 
   var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   var srCol = resolveSrNoColumnIndex(headers);
-  if (srCol === -1) return { ok: false, error: "Sr No column not found after header injection" };
-
-  var targetRow = resolveRowBySrNo(sheet, srCol, srNo);
+  var targetRow = null;
+  
+  if (srNo && srCol > 0) {
+    targetRow = resolveRowBySrNo(sheet, srCol, srNo);
+  }
+  
   if (!targetRow) targetRow = sheet.getLastRow() + 1;
 
   var rowUpdates = [];
