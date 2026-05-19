@@ -170,12 +170,25 @@ export function isVerified(r: RegistrationRow): boolean {
  *   h  | hotel    → "H"   (Only Hotel)
  *   else          → "NONE" (Nothing / No Support)
  */
+/**
+ * isComplimentary — true if Flight & Hotel field has ANY non-blank value.
+ * Blank / null / empty string = Non-Complimentary.
+ * ANY value (H, F, FH, HF, Hotel, Flight, "only hotel", etc.) = Complimentary.
+ */
+export function isComplimentary(code: string | null | undefined): boolean {
+  return textOf(code).length > 0;
+}
+
+/**
+ * fhCategory — used for breakdown labels only (not for non-complimentary math).
+ */
 export type FHCategory = "FH" | "H" | "F" | "NONE";
 export function fhCategory(code: string | null | undefined): FHCategory {
   const s = textOf(code).replace(/\s+/g, "");
   if (["fh", "f/h", "hf", "h/f"].includes(s)) return "FH";
-  if (s === "h" || s === "hotel") return "H";
-  if (s === "f" || s === "flight") return "F";
+  if (s === "h" || s.includes("hotel")) return "H";
+  if (s === "f" || s.includes("flight")) return "F";
+  if (s.length > 0) return "H"; // any other non-blank value = complimentary (treat as Hotel)
   return "NONE";
 }
 
@@ -234,12 +247,14 @@ export function computeKpis(rows: RegistrationRow[]) {
   const verified    = rows.filter(isVerified).length;
   const notVerified = total - verified;
 
-  // Flight+Hotel support — PER ROW
+  // Complimentary = ANY non-blank Flight & Hotel value
+  // Non-Complimentary = blank / null Flight & Hotel
+  const complimentaryRows = rows.filter((r) => isComplimentary(r.flight_hotel_code));
   const fh        = rows.filter((r) => fhCategory(r.flight_hotel_code) === "FH").length;
   const onlyHotel = rows.filter((r) => fhCategory(r.flight_hotel_code) === "H").length;
-  const nothing   = rows.filter((r) => fhCategory(r.flight_hotel_code) === "NONE").length;
-  // Non-Complimentary Services = Total Delegates - (Hotel + Flight + Only Hotel)
-  const nonComplimentary = total - (fh + onlyHotel);
+  const nothing   = rows.filter((r) => !isComplimentary(r.flight_hotel_code)).length;
+  // Non-Complimentary = delegates with blank Flight & Hotel
+  const nonComplimentary = nothing;
 
   // Excl SL/NP/BD
   const filteredRows  = rows.filter((r) => !isExcludedCountry(r.country_name ?? r.passport_country));
