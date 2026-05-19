@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import type { Session } from "next-auth";
 import {
   Globe, Plane, Settings, LogOut, ChevronRight,
-  LayoutDashboard, Menu, X, MessageSquare, BarChart2, Users, ShieldAlert
+  LayoutDashboard, Menu, X, MessageSquare, BarChart2, Users, ShieldAlert, Clock,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import Link from "next/link";
@@ -20,6 +20,8 @@ const NAV_ITEMS = [
   { href: "/settings",      icon: <Settings size={17} />,        label: "Settings",            desc: "Integration Config",     roles: ["admin"] },
 ];
 
+const DEFAULT_TIMEOUT_MINUTES = 30;
+
 interface Props {
   session: Session;
   children: React.ReactNode;
@@ -28,30 +30,77 @@ interface Props {
 export default function AppShell({ session, children }: Props) {
   const pathname = usePathname();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [timeoutMinutes, setTimeoutMinutes] = useState(DEFAULT_TIMEOUT_MINUTES);
+  const [countdown, setCountdown] = useState<number | null>(null); // seconds remaining before logout
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const warningRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── Fetch session timeout from settings ──────────────────────────────────
+  useEffect(() => {
+    fetch("/api/settings")
+      .then(r => r.json())
+      .then(({ settings }) => {
+        const mins = parseInt(settings?.session_timeout_minutes ?? String(DEFAULT_TIMEOUT_MINUTES));
+        if (!isNaN(mins) && mins > 0) setTimeoutMinutes(mins);
+      })
+      .catch(() => {/* use default */});
+  }, []);
+
+  // ── Inactivity Timer ─────────────────────────────────────────────────────
+  const clearAllTimers = useCallback(() => {
+    if (timerRef.current)    clearTimeout(timerRef.current);
+    if (warningRef.current)  clearTimeout(warningRef.current);
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    timerRef.current = null;
+    warningRef.current = null;
+    countdownRef.current = null;
+    setCountdown(null);
+  }, []);
+
+  const resetTimer = useCallback(() => {
+    clearAllTimers();
+
+    const totalMs = timeoutMinutes * 60 * 1000;
+    const warningMs = Math.max(totalMs - 60_000, totalMs * 0.9); // warn at 60s or 90% of timeout
+
+    // Warning: start countdown display
+    warningRef.current = setTimeout(() => {
+      const warningSeconds = Math.round((totalMs - warningMs) / 1000);
+      setCountdown(warningSeconds);
+      countdownRef.current = setInterval(() => {
+        setCountdown(prev => {
+          if (prev == null || prev <= 1) return null;
+          return prev - 1;
+        });
+      }, 1000);
+    }, warningMs);
+
+    // Actual logout
+    timerRef.current = setTimeout(() => {
+      clearAllTimers();
+      signOut({ redirect: true, callbackUrl: "/login" });
+    }, totalMs);
+  }, [timeoutMinutes, clearAllTimers]);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", "light");
-
-    // Inactivity timeout of 10 minutes (600,000 ms)
-    let inactivityTimer: NodeJS.Timeout;
-    const resetTimer = () => {
-      clearTimeout(inactivityTimer);
-      inactivityTimer = setTimeout(() => {
-        signOut({ redirect: true, callbackUrl: "/login" });
-      }, 10 * 60 * 1000);
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+    const handleActivity = () => {
+      if (countdown !== null) setCountdown(null); // dismiss warning on activity
+      resetTimer();
     };
-
-    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
-    events.forEach(e => document.addEventListener(e, resetTimer));
+    events.forEach(e => document.addEventListener(e, handleActivity, { passive: true }));
     resetTimer();
-
     return () => {
-      clearTimeout(inactivityTimer);
-      events.forEach(e => document.removeEventListener(e, resetTimer));
+      clearAllTimers();
+      events.forEach(e => document.removeEventListener(e, handleActivity));
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeoutMinutes]);
 
   const handleSignOut = async () => {
+    clearAllTimers();
     await signOut({ redirect: true, callbackUrl: "/login" });
   };
 
@@ -64,6 +113,34 @@ export default function AppShell({ session, children }: Props) {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
+      {/* ── Inactivity Warning Banner ────────────────────────────────────────── */}
+      {countdown !== null && (
+        <div
+          style={{
+            position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999,
+            background: "linear-gradient(90deg,#ff9500,#ff3b30)",
+            color: "white", padding: "10px 20px",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            fontSize: "0.875rem", fontWeight: 600, boxShadow: "0 2px 12px rgba(255,59,48,0.4)",
+          }}
+        >
+          <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <Clock size={16} />
+            Session expiring in {countdown}s due to inactivity
+          </span>
+          <button
+            onClick={() => { setCountdown(null); resetTimer(); }}
+            style={{
+              background: "rgba(255,255,255,0.25)", border: "1px solid rgba(255,255,255,0.5)",
+              color: "white", borderRadius: "6px", padding: "4px 14px", cursor: "pointer",
+              fontSize: "0.8rem", fontWeight: 600,
+            }}
+          >
+            Stay Logged In
+          </button>
+        </div>
+      )}
+
       {/* ── Mobile overlay ──────────────────────────────────────────────────── */}
       {mobileSidebarOpen && (
         <div
@@ -78,6 +155,7 @@ export default function AppShell({ session, children }: Props) {
       {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
       <aside
         className={`sidebar fixed top-0 left-0 bottom-0 z-50 flex flex-col w-[252px] min-w-[252px] transition-transform duration-250 ease-in-out ${mobileSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
+        style={{ paddingTop: countdown !== null ? "44px" : "0" }}
       >
         {/* Logo */}
         <div className="px-5 py-4 border-b border-[var(--color-border)]">
@@ -94,6 +172,14 @@ export default function AppShell({ session, children }: Props) {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Session timeout indicator */}
+        <div className="px-5 py-2 border-b border-[var(--color-border)]/50 flex items-center gap-1.5 bg-[var(--color-bg-primary)]/50">
+          <Clock size={11} className="text-[var(--color-text-tertiary)] shrink-0" />
+          <span className="text-[0.65rem] text-[var(--color-text-tertiary)] font-medium">
+            Auto-logout: {timeoutMinutes}min inactivity
+          </span>
         </div>
 
         {/* Navigation */}
@@ -125,7 +211,6 @@ export default function AppShell({ session, children }: Props) {
 
         {/* Footer: user + sign out */}
         <div className="p-4 border-t border-[var(--color-border)]">
-
           {/* User row */}
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#0071e3] to-[#5856d6] flex items-center justify-center text-xs font-bold text-white shrink-0 shadow-sm">
@@ -135,8 +220,9 @@ export default function AppShell({ session, children }: Props) {
               <div className="text-[0.85rem] font-semibold text-[var(--color-text-primary)] truncate">
                 {session.user?.name ?? "Staff"}
               </div>
+              {/* Email intentionally hidden per security policy — role shown instead */}
               <div className="text-[0.7rem] text-[var(--color-text-tertiary)] truncate mt-0.5">
-                {session.user?.email}
+                {(session.user as { role?: string })?.role ?? "user"}
               </div>
             </div>
             <button
@@ -151,7 +237,7 @@ export default function AppShell({ session, children }: Props) {
       </aside>
 
       {/* ── Main content ────────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0 md:ml-[252px]">
+      <div className="flex-1 flex flex-col min-w-0 md:ml-[252px]" style={{ paddingTop: countdown !== null ? "44px" : "0" }}>
         {/* Mobile topbar */}
         <div className="mobile-topbar md:hidden px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] backdrop-blur-xl sticky top-0 z-30 flex items-center justify-between">
           <button

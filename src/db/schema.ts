@@ -178,6 +178,14 @@ export const appSettings = pgTable("app_settings", {
   dbVujisSheetName: text("db_vujis_sheet_name").default("DB & vujis"),
   driveFolderId: text("drive_folder_id"),
   gasWebAppUrl: text("gas_web_app_url"),
+  // ── Session security ───────────────────────────────────────────────────────
+  sessionTimeoutMinutes: integer("session_timeout_minutes").default(30),
+  // ── Backup destination (secondary GAS / different Google account) ──────────
+  backupGasWebAppUrl: text("backup_gas_web_app_url"),   // GAS Web App URL of backup script
+  backupSheetId: text("backup_sheet_id"),               // Backup spreadsheet ID
+  backupFolderId: text("backup_folder_id"),             // Backup Drive folder ID
+  backupSheetId2: text("backup_sheet_id_2"),            // Optional second backup spreadsheet
+  backupFolderId2: text("backup_folder_id_2"),          // Optional second backup Drive folder
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 

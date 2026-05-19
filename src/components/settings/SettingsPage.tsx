@@ -43,6 +43,12 @@ type AppSettings = {
   travel_sheet_name: string;
   db_vujis_sheet_name: string;
   drive_folder_id: string;
+  session_timeout_minutes: number;
+  backup_gas_web_app_url: string;
+  backup_sheet_id: string;
+  backup_folder_id: string;
+  backup_sheet_id_2: string;
+  backup_folder_id_2: string;
 };
 
 type StaffUser = {
@@ -141,6 +147,12 @@ export default function SettingsPage() {
     registration_sheet_name: "Form Responses 1",
     travel_sheet_name: "Travel Desk Records",
     db_vujis_sheet_name: "DB & vujis", drive_folder_id: "",
+    session_timeout_minutes: 30,
+    backup_gas_web_app_url: "",
+    backup_sheet_id: "",
+    backup_folder_id: "",
+    backup_sheet_id_2: "",
+    backup_folder_id_2: "",
   });
   const [saving, setSaving] = useState(false);
   const [gasStatus, setGasStatus] = useState<"idle" | "ok" | "error">("idle");
@@ -150,6 +162,8 @@ export default function SettingsPage() {
   const [sheetCreateMsg, setSheetCreateMsg] = useState<{ ok: boolean; message: string } | null>(null);
   const [syncingSheet2, setSyncingSheet2] = useState(false);
   const [syncSheet2Msg, setSyncSheet2Msg] = useState<{ ok: boolean; message: string } | null>(null);
+  const [runningBackup, setRunningBackup] = useState(false);
+  const [backupMsg, setBackupMsg] = useState<{ ok: boolean; message: string } | null>(null);
 
   const handleCreateTravelSheet = async () => {
     if (!settings.gas_web_app_url || !settings.registration_sheet_id) {
@@ -302,6 +316,12 @@ export default function SettingsPage() {
         travel_sheet_name: s.travel_sheet_name ?? "Travel Desk Records",
         db_vujis_sheet_name: s.db_vujis_sheet_name ?? "DB & vujis",
         drive_folder_id: s.drive_folder_id ?? "",
+        session_timeout_minutes: parseInt(s.session_timeout_minutes ?? "30") || 30,
+        backup_gas_web_app_url: s.backup_gas_web_app_url ?? "",
+        backup_sheet_id: s.backup_sheet_id ?? "",
+        backup_folder_id: s.backup_folder_id ?? "",
+        backup_sheet_id_2: s.backup_sheet_id_2 ?? "",
+        backup_folder_id_2: s.backup_folder_id_2 ?? "",
       });
     }).catch(console.error);
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -720,6 +740,170 @@ export default function SettingsPage() {
         </div>
       </Section>
 
+      {/* ── Session Timeout ──────────────────────────────────────────────────── */}
+      <Section
+        isOpen={openSection === "session"}
+        onToggle={() => toggle("session")}
+        title="Security — Inactivity Timeout"
+        color="linear-gradient(135deg,#ff3b30,#ff6b00)"
+        icon={<Shield size={18} color="white" />}
+      >
+        <p className="text-[0.85rem] text-[var(--color-text-secondary)] mb-5 leading-relaxed">
+          Automatically log out all users after this period of inactivity.
+          A warning banner will appear 60 seconds before expiry.
+        </p>
+        <div className="flex flex-col gap-4">
+          <div>
+            <label className="label" htmlFor="session-timeout">
+              Inactivity Timeout:
+              <strong className="ml-2 text-[var(--color-text-primary)]">
+                {settings.session_timeout_minutes} minute{settings.session_timeout_minutes !== 1 ? "s" : ""}
+              </strong>
+            </label>
+            <input
+              id="session-timeout"
+              type="range"
+              min="1" max="480" step="5"
+              value={settings.session_timeout_minutes}
+              onChange={e => setSettings(s => ({ ...s, session_timeout_minutes: parseInt(e.target.value) }))}
+              className="w-full mt-2 accent-[var(--color-accent)]"
+              style={{ height: "6px", borderRadius: "3px", cursor: "pointer" }}
+            />
+            <div className="flex justify-between text-[0.7rem] text-[var(--color-text-tertiary)] mt-1">
+              <span>1 min</span><span>30 min</span><span>1 hr</span><span>2 hr</span><span>4 hr</span>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[5,10,15,30,60,120,240].map(m => (
+              <button
+                key={m}
+                onClick={() => setSettings(s => ({ ...s, session_timeout_minutes: m }))}
+                className={`px-3 py-1.5 rounded-lg text-[0.8rem] font-semibold border transition-colors cursor-pointer ${
+                  settings.session_timeout_minutes === m
+                    ? "bg-[var(--color-accent)] text-white border-[var(--color-accent)]"
+                    : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+                }`}
+              >
+                {m < 60 ? `${m}m` : `${m/60}h`}
+              </button>
+            ))}
+          </div>
+        </div>
+      </Section>
+
+      {/* ── Backup Configuration ────────────────────────────────────────────── */}
+      <Section
+        isOpen={openSection === "backup"}
+        onToggle={() => toggle("backup")}
+        title="Backup Destination — Secondary Google Account"
+        color="linear-gradient(135deg,#5856d6,#0071e3)"
+        icon={<Save size={18} color="white" />}
+      >
+        <div className="bg-[var(--color-accent-light)] border border-[var(--color-accent)]/30 rounded-xl p-4 mb-5 text-[0.82rem] text-[var(--color-accent)] font-medium leading-relaxed">
+          <p className="mb-1 font-bold">Enterprise Backup Architecture</p>
+          <p>Configure a <strong>separate Google account</strong> with its own GAS script, spreadsheet, and Drive folder.
+          Every registration and travel record will automatically sync to both primary and backup destinations.
+          Up to 2 backup folders/sheets are supported for maximum redundancy.</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <Field
+            id="backup-gas-url"
+            label="Backup GAS Web App URL"
+            value={settings.backup_gas_web_app_url}
+            onChange={v => setSettings(s => ({ ...s, backup_gas_web_app_url: v }))}
+            placeholder="https://script.google.com/macros/s/…/exec"
+            hint="GAS deployed from the secondary/backup Google account"
+          />
+          <div>
+            <label className="label" htmlFor="backup-sheet-id">Backup Spreadsheet ID or URL</label>
+            <input
+              id="backup-sheet-id" className="input"
+              value={settings.backup_sheet_id}
+              onChange={e => setSettings(s => ({ ...s, backup_sheet_id: extractSheetId(e.target.value) }))}
+              onPaste={e => { e.preventDefault(); setSettings(s => ({ ...s, backup_sheet_id: extractSheetId(e.clipboardData.getData("text")) })); }}
+              placeholder="Paste URL or Sheet ID — auto-extracted"
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="backup-folder-id">Backup Drive Folder URL or ID</label>
+            <input
+              id="backup-folder-id" className="input"
+              value={settings.backup_folder_id}
+              onChange={e => setSettings(s => ({ ...s, backup_folder_id: extractFolderId(e.target.value) }))}
+              onPaste={e => { e.preventDefault(); setSettings(s => ({ ...s, backup_folder_id: extractFolderId(e.clipboardData.getData("text")) })); }}
+              placeholder="Paste URL or Folder ID — auto-extracted"
+            />
+          </div>
+          <div className="md:col-span-2">
+            <p className="text-[0.8rem] font-bold text-[var(--color-text-secondary)] mb-3 flex items-center gap-1.5">
+              <ExternalLink size={13} /> Second Backup (Optional — for double redundancy)
+            </p>
+          </div>
+          <div>
+            <label className="label" htmlFor="backup-sheet-id-2">Backup Spreadsheet ID #2 (optional)</label>
+            <input
+              id="backup-sheet-id-2" className="input"
+              value={settings.backup_sheet_id_2}
+              onChange={e => setSettings(s => ({ ...s, backup_sheet_id_2: extractSheetId(e.target.value) }))}
+              onPaste={e => { e.preventDefault(); setSettings(s => ({ ...s, backup_sheet_id_2: extractSheetId(e.clipboardData.getData("text")) })); }}
+              placeholder="Second backup sheet (optional)"
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="backup-folder-id-2">Backup Drive Folder ID #2 (optional)</label>
+            <input
+              id="backup-folder-id-2" className="input"
+              value={settings.backup_folder_id_2}
+              onChange={e => setSettings(s => ({ ...s, backup_folder_id_2: extractFolderId(e.target.value) }))}
+              onPaste={e => { e.preventDefault(); setSettings(s => ({ ...s, backup_folder_id_2: extractFolderId(e.clipboardData.getData("text")) })); }}
+              placeholder="Second backup folder (optional)"
+            />
+          </div>
+          {/* Run backup actions */}
+          <div className="md:col-span-2 pt-2 border-t border-[var(--color-border)] mt-2">
+            <p className="text-[0.8rem] font-bold text-[var(--color-text-secondary)] mb-3">Manual Backup Trigger</p>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                className="btn-primary py-2 px-5 font-semibold shadow-sm"
+                onClick={async () => {
+                  setRunningBackup(true); setBackupMsg(null);
+                  try {
+                    const res = await fetch("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "registration" }) });
+                    const data = await res.json();
+                    setBackupMsg({ ok: data.ok, message: data.message ?? data.error ?? "Done" });
+                    if (data.ok) toast.success(`✅ ${data.message}`); else toast.error(data.error ?? "Backup failed");
+                  } catch { toast.error("Request failed"); } finally { setRunningBackup(false); }
+                }}
+                disabled={runningBackup}
+              >
+                <RefreshCw size={14} className={runningBackup ? "animate-spin" : ""} />
+                {runningBackup ? "Backing up…" : "Backup Registrations Now"}
+              </button>
+              <button
+                className="btn-secondary py-2 px-4 font-semibold"
+                onClick={async () => {
+                  setRunningBackup(true); setBackupMsg(null);
+                  try {
+                    const res = await fetch("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "travel" }) });
+                    const data = await res.json();
+                    setBackupMsg({ ok: data.ok, message: data.message ?? data.error ?? "Done" });
+                    if (data.ok) toast.success(`✅ ${data.message}`); else toast.error(data.error ?? "Backup failed");
+                  } catch { toast.error("Request failed"); } finally { setRunningBackup(false); }
+                }}
+                disabled={runningBackup}
+              >
+                <RefreshCw size={14} className={runningBackup ? "animate-spin" : ""} />
+                {runningBackup ? "Running…" : "Backup Travel Records Now"}
+              </button>
+            </div>
+            {backupMsg && (
+              <p className={`mt-2 text-[0.82rem] font-medium flex items-center gap-1.5 ${backupMsg.ok ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}`}>
+                {backupMsg.ok ? <CheckCircle2 size={13}/> : <AlertCircle size={13}/>} {backupMsg.message}
+              </p>
+            )}
+          </div>
+        </div>
+      </Section>
 
       {/* ── Connection Status Panel ─────────────────────────────────────────*/}
       {connStatus && (

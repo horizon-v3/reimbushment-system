@@ -146,6 +146,22 @@ export async function backupRegistrationToSheet(
   });
 }
 
+// ─── Dual Backup: Registration (CLIENT-SIDE) ──────────────────────────────
+export async function backupRegistrationDual(
+  registration: Record<string, unknown>,
+  options: { sheetId?: string; sheetName?: string } = {}
+) {
+  return Promise.all([
+    backupRegistrationToSheet(registration, options),
+    callGasClient({
+      action:       "backupToTravelSheet2",
+      travelRecord: registration,
+      sheetId:      options.sheetId,
+      sheetName:    "Travel Desk Sheet 2",
+    })
+  ]);
+}
+
 // ─── SERVER-SIDE: Backup travel record directly to GAS ────────────────────
 // Called from route.ts after every CREATE / UPDATE operation.
 // Sends the full flattened record to GAS with the correct sheetId.
@@ -170,6 +186,17 @@ export async function backupTravelRecordToSheet(
     },
     gasUrl
   );
+}
+
+// ─── Dual Backup: Travel Record (SERVER-SIDE) ─────────────────────────────
+export async function backupTravelRecordDual(
+  travelRecord: Record<string, unknown>,
+  options: { sheetId?: string; sheetName?: string; gasUrl?: string } = {}
+) {
+  return Promise.all([
+    backupTravelRecordToSheet(travelRecord, options),
+    backupToTravelSheet2(travelRecord, options)
+  ]);
 }
 
 // ─── Export sheet to Excel in Drive (SERVER-SIDE) ─────────────────────────

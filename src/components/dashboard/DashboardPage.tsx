@@ -61,14 +61,9 @@ export default function DashboardPage({ isAdmin }: DashboardPageProps) {
   const [tab, setTab] = useState<"table" | "groups">("table");
 
   const k = useMemo(() => computeKpis(rows), [rows]);
-  const byCountry         = useMemo(() => pivotCount(rows, (r) => r.country_name ?? r.passport_country), [rows]);
-  const byPrimarySector   = useMemo(() => pivotCount(rows, (r) => r.main_import_product_1), [rows]);
-  const bySecondarySector = useMemo(() => pivotCount(rows, (r) => r.main_import_product_2), [rows]);
-  // "All Sectors" card uses nature_of_business as requested
-  const byCombinedSector  = useMemo(() => pivotCount(rows, (r) => r.nature_of_business), [rows]);
-
-  const byPoc    = useMemo(() => pivotCount(rows, (r) => r.poc), [rows]);
-  const byRegion = useMemo(() => pivotCount(rows, (r) => r.region), [rows]);
+  const byCountry = useMemo(() => pivotCount(rows, (r) => r.country_name ?? r.passport_country), [rows]);
+  const byPoc     = useMemo(() => pivotCount(rows, (r) => r.poc), [rows]);
+  const byRegion  = useMemo(() => pivotCount(rows, (r) => r.region), [rows]);
 
 
   // Sync live data from Google Sheet via GAS → upsert Neon
@@ -325,14 +320,11 @@ export default function DashboardPage({ isAdmin }: DashboardPageProps) {
         ))}
       </div>
 
-      {/* Pivots */}
+      {/* Pivots — Sector-wise breakup removed per admin policy */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 mb-8">
-        <PivotTable title="Country-wise"                  rows={byCountry} />
-        <PivotTable title="Your Main Import Product - 1"  rows={byPrimarySector} />
-        <PivotTable title="Your Main Import Product - 2"  rows={bySecondarySector} />
-        <PivotTable title="Nature of Business"            rows={byCombinedSector} />
-        <PivotTable title="POC-wise"                      rows={byPoc} />
-        <PivotTable title="Region-wise"                   rows={byRegion} />
+        <PivotTable title="Country-wise" rows={byCountry} />
+        <PivotTable title="POC-wise"     rows={byPoc} />
+        <PivotTable title="Region-wise"  rows={byRegion} />
       </div>
 
       {/* Group Message Generator */}
@@ -591,17 +583,17 @@ function RegistrationsTable({
           <table className="data-table">
             <thead>
               <tr>
-                {["Sr No", "Name", "Country", "Company", "Primary Sector", "Secondary Sector", "POC", "F/H", "Verified", ...(isAdmin ? [""] : [])].map((h) => (
+                {["Sr No", "Name", "Country", "Company", "Primary Sector", "Secondary Sector", "POC", "F/H", "Status", "Verified", ...(isAdmin ? [""] : [])].map((h) => (
                   <th key={h}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {isLoading && (
-                <tr><td colSpan={isAdmin ? 9 : 8} style={{ textAlign: "center", padding: "2rem", color: "var(--color-text-tertiary)" }}>Loading…</td></tr>
+                <tr><td colSpan={isAdmin ? 10 : 9} style={{ textAlign: "center", padding: "2rem", color: "var(--color-text-tertiary)" }}>Loading…</td></tr>
               )}
               {!isLoading && filtered.length === 0 && (
-                <tr><td colSpan={isAdmin ? 9 : 8} style={{ textAlign: "center", padding: "2rem", color: "var(--color-text-tertiary)" }}>
+                <tr><td colSpan={isAdmin ? 10 : 9} style={{ textAlign: "center", padding: "2rem", color: "var(--color-text-tertiary)" }}>
                   {rows.length === 0 ? "No registrations yet. Import a CSV to get started." : "No results found."}
                 </td></tr>
               )}
@@ -618,6 +610,11 @@ function RegistrationsTable({
                     <td className="max-w-[140px] truncate" title={r.main_import_product_2 ?? undefined}>{r.main_import_product_2}</td>
                     <td className="font-medium">{r.poc}</td>
                     <td><span className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] px-2 py-1 rounded text-xs font-mono">{r.flight_hotel_code || "-"}</span></td>
+                    <td>
+                      <span className={`badge ${r.status ? "badge-neutral" : ""} text-xs font-medium truncate max-w-[100px]`} title={r.status ?? undefined}>
+                        {r.status || "—"}
+                      </span>
+                    </td>
                     <td>
                       <span className={`badge ${verified ? "badge-success border border-[var(--color-success)]/20" : "badge-danger border border-[var(--color-danger)]/20"}`}>
                         {verified ? "Verified" : "Not Verified"}

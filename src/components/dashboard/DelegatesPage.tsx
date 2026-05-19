@@ -200,14 +200,9 @@ export default function DelegatesPage({ role }: Props) {
                       {r.sr_no ?? i + 1}
                     </td>
                     <td>
-                      <div className="font-semibold text-[var(--color-text-primary)] truncate max-w-[140px]" title={name}>
+                      <div className="font-semibold text-[var(--color-text-primary)] truncate max-w-[160px]" title={name}>
                         {name}
                       </div>
-                      {r.participant_email && (
-                        <div className="text-[0.7rem] text-[var(--color-text-tertiary)] truncate max-w-[140px]">
-                          {r.participant_email}
-                        </div>
-                      )}
                     </td>
                     <td className="max-w-[150px] truncate font-medium" title={r.company_name ?? ""}>
                       {r.company_name ?? "—"}

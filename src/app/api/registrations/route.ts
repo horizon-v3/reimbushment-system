@@ -5,6 +5,18 @@ import { registrations, appSettings, auditLog } from "@/db/schema";
 import { eq, asc, sql, inArray } from "drizzle-orm";
 import { backupRegistrationToSheet, exportSheetToExcel } from "@/lib/gas-client";
 
+// ─── Enterprise IP extractor ────────────────────────────────────────────────────
+function extractIp(request: Request): string {
+  // Priority: Cloudflare > X-Forwarded-For > X-Real-IP > fallback
+  const cf  = request.headers.get("cf-connecting-ip");
+  if (cf)  return cf.trim();
+  const fwd = request.headers.get("x-forwarded-for");
+  if (fwd) return fwd.split(",")[0].trim();
+  const real = request.headers.get("x-real-ip");
+  if (real) return real.trim();
+  return "unknown";
+}
+
 // ============================================================
 // Normalize a raw CSV / JSON key into a stable lookup string:
 //   1. trim + lowercase
@@ -119,6 +131,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const limit = parseInt(url.searchParams.get("limit") ?? "5000");
   const offset = parseInt(url.searchParams.get("offset") ?? "0");
+  const ip = extractIp(request);
 
   try {
     const rows = await db
@@ -140,6 +153,15 @@ export async function GET(request: Request) {
           v,
         ])
       );
+
+    // Audit log for data access
+    db.insert(auditLog).values({
+      userId: session.user?.id === "admin" ? 1 : parseInt(session.user?.id || "0"),
+      action: "view_registrations",
+      entityType: "registration",
+      ipAddress: ip,
+      metadata: { limit, offset, count: Number(count) },
+    }).catch(console.error);
 
     return NextResponse.json({ rows: rows.map(toSnake), total: Number(count) });
   } catch (err) {
@@ -217,6 +239,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden: insufficient permissions" }, { status: 403 });
   }
 
+  const ip = extractIp(request);
+
   try {
     const body = await request.json();
     const { records, single } = body as {
@@ -240,6 +264,7 @@ export async function POST(request: Request) {
         action: "create_registration",
         entityType: "registration",
         entityId: inserted.id,
+        ipAddress: ip,
       }).catch(console.error);
 
       return NextResponse.json({ ok: true, record: inserted });
@@ -304,6 +329,7 @@ export async function POST(request: Request) {
         userId: session.user?.id === "admin" ? 1 : parseInt(session.user?.id || "0"),
         action: "bulk_import_registrations",
         entityType: "registration",
+        ipAddress: ip,
         metadata: { count: totalInserted, total: mapped.length },
       }).catch(console.error);
 
@@ -329,6 +355,7 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Forbidden: admin access required" }, { status: 403 });
   }
 
+  const ip = extractIp(request);
   const url = new URL(request.url);
   const all = url.searchParams.get("all") === "true";
 
@@ -341,10 +368,11 @@ export async function DELETE(request: Request) {
         userId: session.user?.id === "admin" ? 1 : parseInt(session.user?.id || "0"),
         action: "clear_all_registrations",
         entityType: "registration",
+        ipAddress: ip,
         metadata: { wipedAt: new Date().toISOString() },
       });
 
-      console.warn(`[DELETE /api/registrations] ALL data wiped by user ${session.user?.id}`);
+      console.warn(`[DELETE /api/registrations] ALL data wiped by user ${session.user?.id} from IP ${ip}`);
       return NextResponse.json({ ok: true, wiped: true });
     } catch (err) {
       console.error("[DELETE /api/registrations?all=true]", err);
@@ -364,6 +392,7 @@ export async function DELETE(request: Request) {
       action: "delete_registration",
       entityType: "registration",
       entityId: id,
+      ipAddress: ip,
     });
 
     return NextResponse.json({ ok: true });

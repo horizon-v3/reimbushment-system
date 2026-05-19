@@ -3,11 +3,20 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
 
-/** Ensure the db_vujis_sheet_name column exists (idempotent) */
+/** Ensure all schema columns exist (idempotent) */
 async function ensureSettingsSchema() {
-  await db.execute(sql`
-    ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS db_vujis_sheet_name TEXT DEFAULT 'DB & vujis'
-  `);
+  const cols = [
+    `ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS db_vujis_sheet_name TEXT DEFAULT 'DB & vujis'`,
+    `ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS session_timeout_minutes INTEGER DEFAULT 30`,
+    `ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS backup_gas_web_app_url TEXT`,
+    `ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS backup_sheet_id TEXT`,
+    `ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS backup_folder_id TEXT`,
+    `ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS backup_sheet_id_2 TEXT`,
+    `ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS backup_folder_id_2 TEXT`,
+  ];
+  for (const stmt of cols) {
+    try { await db.execute(sql.raw(stmt)); } catch { /* already exists */ }
+  }
 }
 
 // ─── GET /api/settings ────────────────────────────────────────────────────────
@@ -18,7 +27,6 @@ export async function GET() {
   try {
     await ensureSettingsSchema();
 
-    // postgres-js returns a RowList (array-like), NOT { rows: [...] }
     const result = await db.execute(sql`
       SELECT
         id,
@@ -26,8 +34,14 @@ export async function GET() {
         COALESCE(registration_sheet_name, 'Form Responses 1')  AS registration_sheet_name,
         COALESCE(travel_sheet_name,       'Travel Desk Records') AS travel_sheet_name,
         COALESCE(db_vujis_sheet_name,     'DB & vujis')          AS db_vujis_sheet_name,
+        COALESCE(session_timeout_minutes, 30)                    AS session_timeout_minutes,
         drive_folder_id,
         gas_web_app_url,
+        backup_gas_web_app_url,
+        backup_sheet_id,
+        backup_folder_id,
+        backup_sheet_id_2,
+        backup_folder_id_2,
         updated_at
       FROM app_settings
       WHERE id = 1
@@ -48,6 +62,10 @@ export async function POST(request: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // Only admins can save settings
+  const role = (session.user as { role?: string }).role ?? "staff";
+  if (role !== "admin") return NextResponse.json({ error: "Forbidden: admin only" }, { status: 403 });
+
   try {
     const body = await request.json();
 
@@ -59,6 +77,13 @@ export async function POST(request: Request) {
     const dbVujisSheetName      = (body.db_vujis_sheet_name     as string | null) || "DB & vujis";
     const driveFolderId         = (body.drive_folder_id         as string | null)  ?? null;
     const gasWebAppUrl          = (body.gas_web_app_url         as string | null)  ?? null;
+    const sessionTimeoutMinutes = Math.max(1, Math.min(480, parseInt(body.session_timeout_minutes ?? "30") || 30));
+    // Backup fields
+    const backupGasWebAppUrl = (body.backup_gas_web_app_url as string | null) ?? null;
+    const backupSheetId      = (body.backup_sheet_id        as string | null) ?? null;
+    const backupFolderId     = (body.backup_folder_id       as string | null) ?? null;
+    const backupSheetId2     = (body.backup_sheet_id_2      as string | null) ?? null;
+    const backupFolderId2    = (body.backup_folder_id_2     as string | null) ?? null;
 
     await db.execute(sql`
       INSERT INTO app_settings (
@@ -69,6 +94,12 @@ export async function POST(request: Request) {
         db_vujis_sheet_name,
         drive_folder_id,
         gas_web_app_url,
+        session_timeout_minutes,
+        backup_gas_web_app_url,
+        backup_sheet_id,
+        backup_folder_id,
+        backup_sheet_id_2,
+        backup_folder_id_2,
         updated_at
       ) VALUES (
         1,
@@ -78,6 +109,12 @@ export async function POST(request: Request) {
         ${dbVujisSheetName},
         ${driveFolderId},
         ${gasWebAppUrl},
+        ${sessionTimeoutMinutes},
+        ${backupGasWebAppUrl},
+        ${backupSheetId},
+        ${backupFolderId},
+        ${backupSheetId2},
+        ${backupFolderId2},
         NOW()
       )
       ON CONFLICT (id) DO UPDATE SET
@@ -87,10 +124,16 @@ export async function POST(request: Request) {
         db_vujis_sheet_name     = EXCLUDED.db_vujis_sheet_name,
         drive_folder_id         = EXCLUDED.drive_folder_id,
         gas_web_app_url         = EXCLUDED.gas_web_app_url,
+        session_timeout_minutes = EXCLUDED.session_timeout_minutes,
+        backup_gas_web_app_url  = EXCLUDED.backup_gas_web_app_url,
+        backup_sheet_id         = EXCLUDED.backup_sheet_id,
+        backup_folder_id        = EXCLUDED.backup_folder_id,
+        backup_sheet_id_2       = EXCLUDED.backup_sheet_id_2,
+        backup_folder_id_2      = EXCLUDED.backup_folder_id_2,
         updated_at              = NOW()
     `);
 
-    const updated  = Array.from(await db.execute(sql`
+    const updated = Array.from(await db.execute(sql`
       SELECT * FROM app_settings WHERE id = 1 LIMIT 1
     `));
 

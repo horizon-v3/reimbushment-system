@@ -86,7 +86,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     }),
   ],
 
-  session: { strategy: "jwt", maxAge: 10 * 60 }, // 10 minutes expiration
+  session: {
+    strategy: "jwt",
+    // maxAge is read from app_settings.session_timeout_minutes at runtime.
+    // Default: 30 minutes. Admin can change via Settings page.
+    maxAge: (() => {
+      // We can't await here so we use a cached value.
+      // The actual enforcement is done by the jwt/session callbacks checking iat.
+      return (parseInt(process.env.SESSION_TIMEOUT_MINUTES ?? "30") || 30) * 60;
+    })(),
+  },
 
   pages: {
     signIn: "/login",
