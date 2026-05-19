@@ -50,12 +50,45 @@ function useRegistrations() {
   return { rows: data?.rows ?? [], total: data?.total ?? 0, isLoading, error, mutate };
 }
 
+// ── DB & Vujis data — authoritative source for Unique Companies / Verified / Not Verified
+function useDbVujis() {
+  const { data, isLoading: vLoading } = useSWR<{ rows: Record<string, unknown>[]; total: number }>(
+    "/api/db-vujis?limit=5000",
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+  const vujisRows = data?.rows ?? [];
+
+  // Mirrors AnalyticsPage computation exactly
+  const uniqueCompanies = new Set(
+    vujisRows.map((r) => {
+      const name = String(r.company_name ?? "").toLowerCase().trim()
+        .replace(/\b(the|ltd|limited|llc|inc|corp|corporation|co|company|pvt|private|fzc|fze|llp)\b/g, " ")
+        .replace(/\s+/g, "");
+      return name;
+    }).filter(Boolean)
+  ).size;
+
+  let verified = 0;
+  let notVerified = 0;
+  for (const r of vujisRows) {
+    const y = ((r.proof_of_import_y as string) ?? "").toLowerCase();
+    const n = ((r.proof_of_import_n as string) ?? "").toLowerCase();
+    if (y.includes("y")) verified++;
+    else if (n.includes("n")) notVerified++;
+  }
+
+  return { uniqueCompanies, verified, notVerified, totalRows: vujisRows.length, vLoading };
+}
+
 interface DashboardPageProps {
   isAdmin: boolean;
 }
 
 export default function DashboardPage({ isAdmin }: DashboardPageProps) {
   const { rows, isLoading, mutate } = useRegistrations();
+  // Authoritative Vujis KPIs — strictly from db_vujis_records (same as Analytics page)
+  const { uniqueCompanies: vujisUnique, verified: vujisVerified, notVerified: vujisNotVerified, vLoading } = useDbVujis();
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [msg, setMsg] = useState("");
   const [tab, setTab] = useState<"table" | "groups">("table");
@@ -215,19 +248,21 @@ export default function DashboardPage({ isAdmin }: DashboardPageProps) {
   };
 
   const kpiData = [
-    { label: "Total Registrations",                                   value: k.total,                  icon: <Users size={20} />,        tone: "neutral" },
-    { label: "Unique Companies",                                       value: k.uniqueCompanies,         icon: <Building2 size={20} />,    tone: "neutral" },
-    { label: "Verified",                                               value: k.verified,                icon: <CheckCircle size={20} />,  tone: "good"    },
-    { label: "Not Verified",                                           value: k.notVerified,             icon: <XCircle size={20} />,      tone: "bad"     },
-    { label: "Total excl. SL / NP / BD",                              value: k.totalNoExcl,             icon: <Globe size={20} />,        tone: "neutral" },
-    { label: "Unique Companies excl. SL / NP / BD",                   value: k.uniqueNoExcl,            icon: <Building2 size={20} />,    tone: "neutral" },
-    { label: "Will Not Attend",                                        value: k.willNotAttend,           icon: <XCircle size={20} />,      tone: "bad"     },
-    { label: "Without BL / Dollar Biz / Vujis",                       value: k.withoutBlDollarVujis,    icon: <ShoppingCart size={20} />, tone: "warn"    },
-    { label: "Hotel + Flight",                                         value: k.fh,                      icon: <Hotel size={20} />,        tone: "warn"    },
-    { label: "Only Hotel",                                             value: k.onlyHotel,               icon: <Hotel size={20} />,        tone: "warn"    },
-    { label: "Non-Complimentary Services",                             value: k.nonComplimentary,        icon: <Hotel size={20} />,        tone: "warn"    },
-    { label: "Ceramic & Sanitaryware (Ceramic keyword)",               value: k.ceramicAndSanitaryware,  icon: <ShoppingCart size={20} />, tone: "neutral" },
-    { label: "Non-Ceramic",                                            value: k.nonCeramic,              icon: <Globe size={20} />,        tone: "neutral" },
+    { label: "Total Registrations",                                   value: k.total,                                          icon: <Users size={20} />,        tone: "neutral", source: "reg"    },
+    // ── These 3 STRICTLY from DB & Vujis sheet (db_vujis_records) ──────────────
+    { label: "Unique Companies",                                       value: vLoading ? k.uniqueCompanies : vujisUnique,        icon: <Building2 size={20} />,    tone: "neutral", source: "vujis"  },
+    { label: "Verified",                                               value: vLoading ? k.verified        : vujisVerified,      icon: <CheckCircle size={20} />,  tone: "good",    source: "vujis"  },
+    { label: "Not Verified",                                           value: vLoading ? k.notVerified     : vujisNotVerified,   icon: <XCircle size={20} />,      tone: "bad",     source: "vujis"  },
+    // ── Rest from registrations table ──────────────────────────────────────────
+    { label: "Total excl. SL / NP / BD",                              value: k.totalNoExcl,                                    icon: <Globe size={20} />,        tone: "neutral", source: "reg"    },
+    { label: "Unique Companies excl. SL / NP / BD",                   value: k.uniqueNoExcl,                                   icon: <Building2 size={20} />,    tone: "neutral", source: "reg"    },
+    { label: "Will Not Attend",                                        value: k.willNotAttend,                                  icon: <XCircle size={20} />,      tone: "bad",     source: "reg"    },
+    { label: "Without BL / Dollar Biz / Vujis",                       value: k.withoutBlDollarVujis,                           icon: <ShoppingCart size={20} />, tone: "warn",    source: "reg"    },
+    { label: "Hotel + Flight",                                         value: k.fh,                                             icon: <Hotel size={20} />,        tone: "warn",    source: "reg"    },
+    { label: "Only Hotel",                                             value: k.onlyHotel,                                      icon: <Hotel size={20} />,        tone: "warn",    source: "reg"    },
+    { label: "Non-Complimentary Services",                             value: k.nonComplimentary,                               icon: <Hotel size={20} />,        tone: "warn",    source: "reg"    },
+    { label: "Ceramic & Sanitaryware (Ceramic keyword)",               value: k.ceramicAndSanitaryware,                         icon: <ShoppingCart size={20} />, tone: "neutral", source: "reg"    },
+    { label: "Non-Ceramic",                                            value: k.nonCeramic,                                     icon: <Globe size={20} />,        tone: "neutral", source: "reg"    },
   ];
 
   const groups = useMemo(() => {
@@ -318,8 +353,19 @@ export default function DashboardPage({ isAdmin }: DashboardPageProps) {
 
       {/* KPI Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4 mb-8">
-        {kpiData.map(({ label, value, icon, tone }) => (
-          <KpiCard key={label} label={label} value={value} icon={icon} tone={tone as "good" | "bad" | "warn" | "neutral"} />
+        {kpiData.map(({ label, value, icon, tone, source }) => (
+          <div key={label} className="relative">
+            <KpiCard label={label} value={value} icon={icon} tone={tone as "good" | "bad" | "warn" | "neutral"} />
+            {source === "vujis" && (
+              <span
+                title="Value sourced strictly from DB &amp; Vujis Sheet"
+                className="absolute top-1.5 right-1.5 text-[0.6rem] font-bold px-1.5 py-0.5 rounded-full"
+                style={{ background: "rgba(0,113,227,0.12)", color: "var(--color-accent)", letterSpacing: "0.02em" }}
+              >
+                Vujis
+              </span>
+            )}
+          </div>
         ))}
       </div>
 
