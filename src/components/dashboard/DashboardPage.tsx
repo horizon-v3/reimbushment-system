@@ -77,7 +77,10 @@ export default function DashboardPage({ isAdmin }: DashboardPageProps) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Sync failed");
-      toast.success(`✅ Synced ${data.upserted} rows from Sheet`, { id: tid });
+      // Show detailed breakdown so counts are never confusing
+      const msg = data.message
+        ?? `✅ Sheet: ${data.sheetRows ?? data.total} rows | Upserted: ${data.upserted}${data.skipped ? ` | Skipped (no Sr No): ${data.skipped}` : ""} | DB Total: ${data.dbCount ?? "?"}`;
+      toast.success(msg, { id: tid, duration: 6000 });
       mutate();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Sync failed", { id: tid });

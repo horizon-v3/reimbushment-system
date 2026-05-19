@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     if (!gasData.ok) throw new Error(gasData.error ?? "GAS returned ok:false");
 
     const rows = gasData.rows ?? [];
-    if (rows.length === 0) return NextResponse.json({ ok: true, upserted: 0, message: "No rows returned from sheet" });
+    if (rows.length === 0) return NextResponse.json({ ok: true, upserted: 0, skipped: 0, sheetRows: 0, message: "No rows returned from sheet" });
 
     // ── 2. Map raw sheet rows → DB fields ─────────────────────────────────────
     const mapped = rows.map(mapSheetRow);
@@ -67,12 +67,14 @@ export async function POST(request: Request) {
     // ── 3. Batch upsert into Neon (by sr_no) ──────────────────────────────────
     const BATCH = 100;
     let upserted = 0;
+    let skipped  = 0; // rows that had no Sr No (blank/null) — cannot be upserted
 
     for (let i = 0; i < mapped.length; i += BATCH) {
       const batch = mapped.slice(i, i + BATCH);
 
       for (const row of batch) {
-        if (!row.srNo) continue;
+        // Skip rows with no Sr No — they cannot be uniquely identified
+        if (!row.srNo) { skipped++; continue; }
 
         await db
           .insert(registrations)
@@ -110,6 +112,7 @@ export async function POST(request: Request) {
               bbInvitationStatus:    row.bbInvitationStatus,
               dollarBusiness:        row.dollarBusiness,
               vujis:                 row.vujis,
+              willNotAttend:         row.willNotAttend,
               passportFrontCopy:     row.passportFrontCopy,
               passportBackCopy:      row.passportBackCopy,
               proofUpload:           row.proofUpload,
@@ -126,8 +129,19 @@ export async function POST(request: Request) {
       }
     }
 
-    console.log(`[POST /api/sync] upserted=${upserted} from ${rows.length} sheet rows`);
-    return NextResponse.json({ ok: true, upserted, total: rows.length });
+    // ── 4. Get authoritative DB count ──────────────────────────────────────────
+    const [{ dbCount }] = await db.select({ dbCount: sql<number>`count(*)` }).from(registrations);
+
+    console.log(`[POST /api/sync] sheetRows=${rows.length} upserted=${upserted} skipped=${skipped} dbCount=${Number(dbCount)}`);
+    return NextResponse.json({
+      ok: true,
+      upserted,
+      skipped,
+      sheetRows: rows.length,
+      dbCount: Number(dbCount),
+      total: rows.length,
+      message: `Synced ${upserted} rows (${skipped} skipped — no Sr No). DB now has ${Number(dbCount)} records.`,
+    });
 
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Sync failed";
@@ -156,20 +170,42 @@ export async function GET() {
 }
 
 // ─── Row mapper: sheet column headers → Drizzle insert object ─────────────────
+// KEY FIX: Uses case-insensitive fuzzy matching across ALL keys in the row object.
+// This handles any column header casing from GAS (e.g. "Will not attend",
+// "WILL NOT ATTEND", "Dollar Business", "dollar business", "Vujis", "VUJIS", etc.)
 function mapSheetRow(r: Record<string, unknown>) {
-  const s = (keys: string[]): string | null => {
-    for (const k of keys) {
-      const v = r[k] ?? r[k.toLowerCase()] ?? r[k.toUpperCase()];
-      if (v != null && String(v).trim()) return String(v).replace(/[\r\n]+/g, " ").trim();
+  // Build a lowercase key → original key index for case-insensitive lookup
+  const lowerKeyMap = new Map<string, string>();
+  for (const k of Object.keys(r)) {
+    // Also index by collapsed (remove spaces) version for fuzzy match
+    lowerKeyMap.set(k.toLowerCase().trim(), k);
+    lowerKeyMap.set(k.toLowerCase().replace(/[\s_\-/]+/g, ""), k);
+  }
+
+  /** Lookup value by trying multiple candidate labels — case-insensitive + fuzzy */
+  const s = (candidates: string[]): string | null => {
+    for (const candidate of candidates) {
+      // 1. Exact match
+      if (r[candidate] != null && String(r[candidate]).trim()) {
+        return String(r[candidate]).replace(/[\r\n]+/g, " ").trim();
+      }
+      // 2. Case-insensitive match
+      const lower = candidate.toLowerCase().trim();
+      const originalKey = lowerKeyMap.get(lower)
+        ?? lowerKeyMap.get(lower.replace(/[\s_\-/]+/g, ""));
+      if (originalKey && r[originalKey] != null && String(r[originalKey]).trim()) {
+        return String(r[originalKey]).replace(/[\r\n]+/g, " ").trim();
+      }
     }
     return null;
   };
+
   const n = (keys: string[]): number | null => {
     const v = s(keys); if (!v) return null;
     const num = Number(v); return isNaN(num) ? null : num;
   };
 
-  // Robust product matching
+  // Robust product matching — scans ALL keys for "import" + "product"
   let p1: string | null = null, p2: string | null = null;
   for (const [k, v] of Object.entries(r)) {
     const lk = k.toLowerCase().trim();
@@ -180,8 +216,40 @@ function mapSheetRow(r: Record<string, unknown>) {
     }
   }
 
+  // ── Will Not Attend: scan ALL keys fuzzy ──────────────────────────────────
+  // Handles: "Will Not Attend", "will not attend", "WILL NOT ATTEND",
+  //          "Will not attend", "willnotattend", "Will_Not_Attend", etc.
+  let willNotAttendVal: string | null = null;
+  for (const [k, v] of Object.entries(r)) {
+    const lk = k.toLowerCase().replace(/[\s_\-]+/g, "");
+    if (lk === "willnotattend") {
+      if (v != null && String(v).trim()) willNotAttendVal = String(v).replace(/[\r\n]+/g, " ").trim();
+      break;
+    }
+  }
+
+  // ── Dollar Business: scan ALL keys fuzzy ──────────────────────────────────
+  let dollarBizVal: string | null = null;
+  for (const [k, v] of Object.entries(r)) {
+    const lk = k.toLowerCase().replace(/[\s_\-]+/g, "");
+    if (lk === "dollarbusiness" || lk === "dollarbiz") {
+      if (v != null && String(v).trim()) dollarBizVal = String(v).replace(/[\r\n]+/g, " ").trim();
+      break;
+    }
+  }
+
+  // ── Vujis: scan ALL keys fuzzy ────────────────────────────────────────────
+  let vujisVal: string | null = null;
+  for (const [k, v] of Object.entries(r)) {
+    const lk = k.toLowerCase().trim();
+    if (lk === "vujis") {
+      if (v != null && String(v).trim()) vujisVal = String(v).replace(/[\r\n]+/g, " ").trim();
+      break;
+    }
+  }
+
   return {
-    srNo:                  n(["Sr No", "sr_no", "SR NO", "Sr. No"]),
+    srNo:                  n(["Sr No", "Sr. No", "SR NO", "sr_no", "srno"]),
     timestampRaw:          s(["Timestamp", "timestamp_raw"]),
     title:                 s(["Title", "title"]),
     firstName:             s(["First Name (As Written on Passport)", "First Name", "first_name"]),
@@ -200,8 +268,8 @@ function mapSheetRow(r: Record<string, unknown>) {
     passportFrontCopy:     s(["Passport Front Copy", "passport_front_copy"]),
     passportBackCopy:      s(["Passport Back Copy", "passport_back_copy"]),
     natureOfBusiness:      s(["Nature of Business", "nature_of_business"]),
-    mainImportProduct1:    p1 || s(["Your Main Import Product - 1", "main_import_product_1"]),
-    mainImportProduct2:    p2 || s(["Your Main Import Product - 2", "main_import_product_2"]),
+    mainImportProduct1:    p1 ?? s(["Your Main Import Product - 1", "main_import_product_1"]),
+    mainImportProduct2:    p2 ?? s(["Your Main Import Product - 2", "main_import_product_2"]),
     proofUpload:           s(["Upload one proof of your Import (Please enter valid document Eg: - Bill of Lading)", "proof_upload"]),
     productsServices:      s(["Which of the below describes your products/services", "products_services"]),
     businessCardUpload:    s(["Please upload your Business Card", "business_card_upload"]),
@@ -215,9 +283,9 @@ function mapSheetRow(r: Record<string, unknown>) {
     remarks:               s(["Remarks", "remarks"]),
     blStatus:              s(["B/L Status", "bl_status"]),
     bbInvitationStatus:    s(["BB Invitation letter status", "bb_invitation_status"]),
-    dollarBusiness:        s(["Dollar Business", "dollar_business", "Dollar biz"]),
-    vujis:                 s(["Vujis", "vujis", "VUJIS"]),
-    willNotAttend:         s(["Will Not Attend", "will_not_attend", "WILL NOT ATTEND"]),
+    dollarBusiness:        dollarBizVal ?? s(["Dollar Business", "dollar_business", "Dollar biz", "DollarBusiness"]),
+    vujis:                 vujisVal     ?? s(["Vujis", "vujis", "VUJIS"]),
+    willNotAttend:         willNotAttendVal ?? s(["Will Not Attend", "will_not_attend", "Will not attend", "WILL NOT ATTEND"]),
     drivePassportFrontUrl: s(["drive_passport_front_url"]),
     drivePassportBackUrl:  s(["drive_passport_back_url"]),
     driveProofUrl:         s(["drive_proof_url"]),
