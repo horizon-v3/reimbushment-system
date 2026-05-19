@@ -16,6 +16,15 @@ function useRegistrations() {
   return { rows: data?.rows ?? [], total: data?.total ?? 0, isLoading, error, mutate };
 }
 
+function useDbVujis() {
+  const { data, error, mutate, isLoading } = useSWR<{ rows: any[]; total: number }>(
+    "/api/db-vujis?limit=5000",
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+  return { rows: data?.rows ?? [], total: data?.total ?? 0, isLoading, error, mutate };
+}
+
 // ─── Brand Logo ─────────────────────────────────────────────────────────────
 function BrandLogo({ size = 40 }: { size?: number }) {
   return (
@@ -96,75 +105,20 @@ function buildSectorBreakup(rows: RegistrationRow[]): SectorRow[] {
     .sort((a, b) => b.regCount - a.regCount);
 }
 
-type DbVujisRow = {
-  sr: number;
-  companyName: string;
-  countryName: string;
-  region: string;
-  proofImportY: string;
-  proofImportN: string;
-  vujis: string;
-  importValueUsd: string;
-  dollarBusiness: string;
-  importValueUsd2: string;
-  both: string;
-  importingFromIndia: string;
-  importingOther: string;
-  product1: string;
-  product2: string;
-  poc: string;
-  reason: string;
-  comment: string;
-};
-
-function buildDbVujisRows(rows: RegistrationRow[]): DbVujisRow[] {
-  // Deduplicate by normalized company name
-  const seen = new Map<string, RegistrationRow>();
-  for (const r of rows) {
-    const key = normalizeCompany(r.company_name);
-    if (key && !seen.has(key)) seen.set(key, r);
-  }
-
-  return Array.from(seen.values()).map((r, i) => {
-    const proofImport = (r.proof_import ?? "").toLowerCase();
-    const blSupplier = (r.bl_supplier_country ?? "").toLowerCase();
-    const importingIndia = blSupplier.includes("india") ? "Yes" : "";
-    const importingOther = blSupplier && !blSupplier.includes("india") ? "Yes" : "";
-
-    return {
-      sr: i + 1,
-      companyName: r.company_name ?? "",
-      countryName: r.country_name ?? r.passport_country ?? "",
-      region: r.region ?? "",
-      proofImportY: proofImport.includes("yes") || proofImport === "y" ? "Y" : "",
-      proofImportN: proofImport.includes("no") ? "N" : "",
-      vujis: "",
-      importValueUsd: "",
-      dollarBusiness: "",
-      importValueUsd2: "",
-      both: importingIndia && importingOther ? "Yes" : "",
-      importingFromIndia: importingIndia,
-      importingOther,
-      product1: r.main_import_product_1 ?? "",
-      product2: r.main_import_product_2 ?? "",
-      poc: r.poc ?? "",
-      reason: "",
-      comment: r.remarks ?? "",
-    };
-  });
-}
+// No longer building from registrations, we use real API data.
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function AnalyticsPage() {
   const { rows, isLoading, mutate } = useRegistrations();
+  const { rows: dbVujisRows, isLoading: dbLoading, mutate: mutateDb } = useDbVujis();
   const [tab, setTab] = useState<"sector" | "dbvujis">("sector");
   const [sectorSearch, setSectorSearch] = useState("");
   const [dbSearch, setDbSearch] = useState("");
   const [dbProduct1, setDbProduct1] = useState("");
   const [dbProduct2, setDbProduct2] = useState("");
+  const [syncing, setSyncing] = useState(false);
 
   const sectorRows = useMemo(() => buildSectorBreakup(rows), [rows]);
-  const dbVujisRows = useMemo(() => buildDbVujisRows(rows), [rows]);
 
   // Totals for sector
   const sectorTotals = useMemo(() => ({
@@ -190,20 +144,49 @@ export default function AnalyticsPage() {
     if (dbSearch.trim()) {
       const q = dbSearch.toLowerCase();
       result = result.filter((r) =>
-        [r.companyName, r.countryName, r.region, r.poc]
-          .some((v) => v.toLowerCase().includes(q))
+        [r.company_name, r.country_name, r.region, r.poc]
+          .some((v) => (v || "").toLowerCase().includes(q))
       );
     }
     if (dbProduct1.trim()) {
       const q = dbProduct1.toLowerCase();
-      result = result.filter((r) => r.product1.toLowerCase().includes(q));
+      result = result.filter((r) => (r.main_import_product_1 || "").toLowerCase().includes(q));
     }
     if (dbProduct2.trim()) {
       const q = dbProduct2.toLowerCase();
-      result = result.filter((r) => r.product2.toLowerCase().includes(q));
+      result = result.filter((r) => (r.main_import_product_2 || "").toLowerCase().includes(q));
     }
     return result;
   }, [dbVujisRows, dbSearch, dbProduct1, dbProduct2]);
+
+  const dbStats = useMemo(() => {
+    const uniqueKeys = new Set(dbVujisRows.map(r => normalizeCompany(r.company_name)).filter(Boolean));
+    let verified = 0;
+    let nonVerified = 0;
+    for (const r of dbVujisRows) {
+      if ((r.proof_of_import_y || "").toLowerCase().includes("y")) verified++;
+      else if ((r.proof_of_import_n || "").toLowerCase().includes("n")) nonVerified++;
+    }
+    return { unique: uniqueKeys.size, verified, nonVerified };
+  }, [dbVujisRows]);
+
+  const handleSyncDbVujis = async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/db-vujis/sync", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        alert("Synced " + data.synced + " DB & Vujis records successfully.");
+        mutateDb();
+      } else {
+        alert("Sync failed: " + data.error);
+      }
+    } catch (e) {
+      alert("Error syncing data.");
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   return (
     <div className="p-6 md:p-8 max-w-[1400px] mx-auto animate-fade-in">
@@ -220,8 +203,8 @@ export default function AnalyticsPage() {
             </p>
           </div>
         </div>
-        <button className="btn-secondary" onClick={() => mutate()}>
-          <RefreshCw size={14} /> Refresh
+        <button className="btn-secondary" onClick={() => { mutate(); mutateDb(); }}>
+          <RefreshCw size={14} /> Refresh All
         </button>
       </div>
 
@@ -367,6 +350,23 @@ export default function AnalyticsPage() {
               </p>
             )}
 
+            <div className="flex flex-col sm:flex-row items-center justify-between mb-2">
+              <div className="flex items-center gap-4 text-[0.85rem] font-medium text-[var(--color-text-secondary)]">
+                <span className="bg-[var(--color-surface)] px-3 py-1.5 rounded-lg border shadow-sm">
+                  <strong className="text-[var(--color-text-primary)]">{dbStats.unique}</strong> Unique Companies
+                </span>
+                <span className="bg-[var(--color-success-light)] text-[var(--color-success)] px-3 py-1.5 rounded-lg border border-[var(--color-success)]/20 shadow-sm">
+                  <strong className="font-bold">{dbStats.verified}</strong> Verified (Y)
+                </span>
+                <span className="bg-[var(--color-danger-light)] text-[var(--color-danger)] px-3 py-1.5 rounded-lg border border-[var(--color-danger)]/20 shadow-sm">
+                  <strong className="font-bold">{dbStats.nonVerified}</strong> Non-Verified (N)
+                </span>
+              </div>
+              <button className="btn-primary py-1.5 px-4 text-[0.8rem]" onClick={handleSyncDbVujis} disabled={syncing}>
+                <RefreshCw size={13} className={syncing ? "animate-spin" : ""} /> {syncing ? "Syncing…" : "Sync from Sheet"}
+              </button>
+            </div>
+
             {/* Table */}
             <div className="border border-[var(--color-border)] rounded-xl overflow-hidden shadow-sm">
               <div className="overflow-x-auto overflow-y-auto max-h-[600px] custom-scrollbar">
@@ -394,39 +394,39 @@ export default function AnalyticsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {isLoading && (
+                    {dbLoading && (
                       <tr><td colSpan={18} className="text-center py-8 text-[var(--color-text-tertiary)]">Loading…</td></tr>
                     )}
-                    {!isLoading && filteredDb.length === 0 && (
-                      <tr><td colSpan={18} className="text-center py-8 text-[var(--color-text-tertiary)]">No data found.</td></tr>
+                    {!dbLoading && filteredDb.length === 0 && (
+                      <tr><td colSpan={18} className="text-center py-8 text-[var(--color-text-tertiary)]">No data found. Click Sync to pull from DB & Vujis sheet.</td></tr>
                     )}
                     {filteredDb.map((r, i) => (
-                      <tr key={r.sr} className={i % 2 === 0 ? "" : "bg-[var(--color-bg-primary)]/40"}>
-                        <td className="font-mono text-xs text-[var(--color-text-tertiary)]">{r.sr}</td>
-                        <td className="font-semibold max-w-[160px] truncate" title={r.companyName}>{r.companyName}</td>
-                        <td>{r.countryName}</td>
+                      <tr key={r.sr_no} className={i % 2 === 0 ? "" : "bg-[var(--color-bg-primary)]/40"}>
+                        <td className="font-mono text-xs text-[var(--color-text-tertiary)]">{r.sr_no}</td>
+                        <td className="font-semibold max-w-[160px] truncate" title={r.company_name}>{r.company_name}</td>
+                        <td>{r.country_name}</td>
                         <td>{r.region}</td>
                         <td className="text-center">
-                          {r.proofImportY && <span className="badge badge-success text-[0.7rem] px-2">{r.proofImportY}</span>}
+                          {r.proof_of_import_y && <span className="badge badge-success text-[0.7rem] px-2">{r.proof_of_import_y}</span>}
                         </td>
                         <td className="text-center">
-                          {r.proofImportN && <span className="badge badge-danger text-[0.7rem] px-2">{r.proofImportN}</span>}
+                          {r.proof_of_import_n && <span className="badge badge-danger text-[0.7rem] px-2">{r.proof_of_import_n}</span>}
                         </td>
                         <td className="text-[var(--color-text-tertiary)]">{r.vujis || "—"}</td>
-                        <td className="text-[var(--color-text-tertiary)]">{r.importValueUsd || "—"}</td>
-                        <td className="text-[var(--color-text-tertiary)]">{r.dollarBusiness || "—"}</td>
-                        <td className="text-[var(--color-text-tertiary)]">{r.importValueUsd2 || "—"}</td>
+                        <td className="text-[var(--color-text-tertiary)]">{r.import_value_vujis || "—"}</td>
+                        <td className="text-[var(--color-text-tertiary)]">{r.dollar_business || "—"}</td>
+                        <td className="text-[var(--color-text-tertiary)]">{r.import_value_dollar || "—"}</td>
                         <td className="text-center">
-                          {r.both && <span className="badge badge-neutral text-[0.7rem] px-2">{r.both}</span>}
+                          {r.both_db_vujis && <span className="badge badge-neutral text-[0.7rem] px-2">{r.both_db_vujis}</span>}
                         </td>
                         <td className="text-center">
-                          {r.importingFromIndia && <span className="text-[var(--color-success)] font-semibold">✓</span>}
+                          {r.importing_from_india && <span className="text-[var(--color-success)] font-semibold">{r.importing_from_india}</span>}
                         </td>
                         <td className="text-center">
-                          {r.importingOther && <span className="text-[var(--color-warning)] font-semibold">✓</span>}
+                          {r.importing_from_other_country && <span className="text-[var(--color-warning)] font-semibold">{r.importing_from_other_country}</span>}
                         </td>
-                        <td className="max-w-[120px] truncate" title={r.product1}>{r.product1}</td>
-                        <td className="max-w-[120px] truncate" title={r.product2}>{r.product2}</td>
+                        <td className="max-w-[120px] truncate" title={r.main_import_product_1}>{r.main_import_product_1}</td>
+                        <td className="max-w-[120px] truncate" title={r.main_import_product_2}>{r.main_import_product_2}</td>
                         <td className="font-medium">{r.poc}</td>
                         <td className="text-[var(--color-text-tertiary)]">{r.reason || "—"}</td>
                         <td className="max-w-[140px] truncate text-[var(--color-text-secondary)]" title={r.comment}>{r.comment || "—"}</td>
@@ -437,7 +437,7 @@ export default function AnalyticsPage() {
               </div>
             </div>
             <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
-              * Showing unique companies only (fuzzy-deduped). Fields like Vujis, Import Value, and Dollar Business are filled manually.
+              * Click "Sync from Sheet" to fetch real-time updates from the "DB & vujis" Google Sheet tab.
             </p>
           </div>
         )}

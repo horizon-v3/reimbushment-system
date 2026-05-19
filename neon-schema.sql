@@ -168,14 +168,47 @@ CREATE TRIGGER set_timestamp_travel_records
   FOR EACH ROW EXECUTE FUNCTION trigger_set_timestamp();
 
 -- ═══════════════════════════════════════════════════════════════════════════════
+-- 4.5. DB & VUJIS RECORDS TABLE
+-- ═══════════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS db_vujis_records (
+  id                       SERIAL PRIMARY KEY,
+  sr_no                    INTEGER UNIQUE,
+  company_name             TEXT,
+  country_name             TEXT,
+  region                   TEXT,
+  proof_of_import_y        TEXT,
+  proof_of_import_n        TEXT,
+  vujis                    TEXT,
+  import_value_vujis       TEXT,
+  dollar_business          TEXT,
+  import_value_dollar      TEXT,
+  both_db_vujis            TEXT,
+  importing_from_india     TEXT,
+  importing_from_other_country TEXT,
+  main_import_product_1    TEXT,
+  main_import_product_2    TEXT,
+  poc                      TEXT,
+  reason                   TEXT,
+  comment                  TEXT,
+  created_at               TIMESTAMP DEFAULT NOW(),
+  updated_at               TIMESTAMP DEFAULT NOW()
+);
+
+DROP TRIGGER IF EXISTS set_timestamp_db_vujis ON db_vujis_records;
+CREATE TRIGGER set_timestamp_db_vujis
+  BEFORE UPDATE ON db_vujis_records
+  FOR EACH ROW EXECUTE FUNCTION trigger_set_timestamp();
+
+-- ═══════════════════════════════════════════════════════════════════════════════
 -- 5. APP SETTINGS TABLE
 -- ═══════════════════════════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS app_settings (
   id                      INTEGER PRIMARY KEY DEFAULT 1,
-  registration_sheet_id   TEXT,
-  registration_sheet_name TEXT DEFAULT 'Form Responses 1',
-  travel_sheet_name       TEXT DEFAULT 'Travel Desk Records',
-  drive_folder_id         TEXT,
+  registration_sheet_id    TEXT,
+  registration_sheet_name  TEXT DEFAULT 'Form Responses 1',
+  travel_sheet_name        TEXT DEFAULT 'Travel Desk Records',
+  db_vujis_sheet_name      TEXT DEFAULT 'DB & vujis',
+  drive_folder_id          TEXT,
   gas_web_app_url         TEXT,
   updated_at              TIMESTAMP DEFAULT NOW()
 );

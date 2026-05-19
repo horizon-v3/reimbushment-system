@@ -143,12 +143,38 @@ export const travelRecords = pgTable("travel_records", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// ─── DB & Vujis Records ───────────────────────────────────────────────────────
+export const dbVujisRecords = pgTable("db_vujis_records", {
+  id: serial("id").primaryKey(),
+  srNo: integer("sr_no").unique(),
+  companyName: text("company_name"),
+  countryName: text("country_name"),
+  region: text("region"),
+  proofOfImportY: text("proof_of_import_y"),
+  proofOfImportN: text("proof_of_import_n"),
+  vujis: text("vujis"),
+  importValueVujis: text("import_value_vujis"),
+  dollarBusiness: text("dollar_business"),
+  importValueDollar: text("import_value_dollar"),
+  bothDbVujis: text("both_db_vujis"),
+  importingFromIndia: text("importing_from_india"),
+  importingFromOtherCountry: text("importing_from_other_country"),
+  mainImportProduct1: text("main_import_product_1"),
+  mainImportProduct2: text("main_import_product_2"),
+  poc: text("poc"),
+  reason: text("reason"),
+  comment: text("comment"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // ─── App Settings ─────────────────────────────────────────────────────────────
 export const appSettings = pgTable("app_settings", {
   id: integer("id").primaryKey().default(1),
   registrationSheetId: text("registration_sheet_id"),
   registrationSheetName: text("registration_sheet_name").default("Form Responses 1"),
   travelSheetName: text("travel_sheet_name").default("Travel Desk Records"),
+  dbVujisSheetName: text("db_vujis_sheet_name").default("DB & vujis"),
   driveFolderId: text("drive_folder_id"),
   gasWebAppUrl: text("gas_web_app_url"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -184,6 +210,8 @@ export type Registration = typeof registrations.$inferSelect;
 export type NewRegistration = typeof registrations.$inferInsert;
 export type TravelRecord = typeof travelRecords.$inferSelect;
 export type NewTravelRecord = typeof travelRecords.$inferInsert;
+export type DbVujisRecord = typeof dbVujisRecords.$inferSelect;
+export type NewDbVujisRecord = typeof dbVujisRecords.$inferInsert;
 export type AppSettings = typeof appSettings.$inferSelect;
 export type AuditLog = typeof auditLog.$inferSelect;
 export type ChatMessage = typeof chatMessages.$inferSelect;

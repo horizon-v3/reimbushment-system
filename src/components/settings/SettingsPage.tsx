@@ -41,6 +41,7 @@ type AppSettings = {
   registration_sheet_id: string;
   registration_sheet_name: string;
   travel_sheet_name: string;
+  db_vujis_sheet_name: string;
   drive_folder_id: string;
 };
 
@@ -138,7 +139,8 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings>({
     gas_web_app_url: "", registration_sheet_id: "",
     registration_sheet_name: "Form Responses 1",
-    travel_sheet_name: "Travel Desk Records", drive_folder_id: "",
+    travel_sheet_name: "Travel Desk Records",
+    db_vujis_sheet_name: "DB & vujis", drive_folder_id: "",
   });
   const [saving, setSaving] = useState(false);
   const [gasStatus, setGasStatus] = useState<"idle" | "ok" | "error">("idle");
@@ -298,6 +300,7 @@ export default function SettingsPage() {
         registration_sheet_id: s.registration_sheet_id ?? "",
         registration_sheet_name: s.registration_sheet_name ?? "Form Responses 1",
         travel_sheet_name: s.travel_sheet_name ?? "Travel Desk Records",
+        db_vujis_sheet_name: s.db_vujis_sheet_name ?? "DB & vujis",
         drive_folder_id: s.drive_folder_id ?? "",
       });
     }).catch(console.error);
@@ -678,6 +681,10 @@ export default function SettingsPage() {
             value={settings.travel_sheet_name}
             onChange={v => setSettings(s => ({ ...s, travel_sheet_name: v }))}
             placeholder="Travel Desk Records" />
+          <Field id="dbvujis-sheet-name" label="DB & Vujis Sheet Tab"
+            value={settings.db_vujis_sheet_name}
+            onChange={v => setSettings(s => ({ ...s, db_vujis_sheet_name: v }))}
+            placeholder="DB & vujis" />
         </div>
 
         {/* ── Sheet 2 Actions ── */}

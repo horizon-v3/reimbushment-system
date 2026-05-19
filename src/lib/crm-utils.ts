@@ -238,8 +238,8 @@ export function computeKpis(rows: RegistrationRow[]) {
   const fh        = rows.filter((r) => fhCategory(r.flight_hotel_code) === "FH").length;
   const onlyHotel = rows.filter((r) => fhCategory(r.flight_hotel_code) === "H").length;
   const nothing   = rows.filter((r) => fhCategory(r.flight_hotel_code) === "NONE").length;
-  // Non-Complimentary Services = Only Hotel + (Hotel + Flight)
-  const nonComplimentary = fh + onlyHotel;
+  // Non-Complimentary Services = Total Delegates - (Hotel + Flight + Only Hotel)
+  const nonComplimentary = total - (fh + onlyHotel);
 
   // Excl SL/NP/BD
   const filteredRows  = rows.filter((r) => !isExcludedCountry(r.country_name ?? r.passport_country));

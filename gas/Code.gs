@@ -336,13 +336,28 @@ function handleGetRows(body) {
 
   var data = sheet.getRange(1, 1, lastRow, lastCol).getValues();
   var headers = data[0].map(function(h) { return String(h).trim(); });
+  var dedupedHeaders = [];
+  var headerCounts = {};
+  for (var j = 0; j < headers.length; j++) {
+    var h = headers[j];
+    if (!h) { dedupedHeaders.push(""); continue; }
+    if (headerCounts[h]) {
+      var newH = h + " (" + headerCounts[h] + ")";
+      headerCounts[h]++;
+      dedupedHeaders.push(newH);
+    } else {
+      headerCounts[h] = 1;
+      dedupedHeaders.push(h);
+    }
+  }
+
   var rows = [];
 
   for (var i = 1; i < data.length; i++) {
     var rowObj = {};
-    for (var j = 0; j < headers.length; j++) {
-      if (headers[j]) {
-        rowObj[headers[j]] = data[i][j];
+    for (var j = 0; j < dedupedHeaders.length; j++) {
+      if (dedupedHeaders[j]) {
+        rowObj[dedupedHeaders[j]] = data[i][j];
       }
     }
     rows.push(rowObj);
