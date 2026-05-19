@@ -7,9 +7,37 @@ import Papa from "papaparse";
 import {
   Users, Building2, CheckCircle, XCircle, Hotel, Globe, Copy,
   Upload, Download, FileText, RefreshCw, Lock, Trash2, CloudDownload,
+  ShoppingCart,
 } from "lucide-react";
 import { computeKpis, pivotCount, generateGroupMessage, generateCountryGroupMessages, isVerified, type RegistrationRow } from "@/lib/crm-utils";
 import * as XLSX from "xlsx";
+
+// ─── Distinct Brand Logo SVG ──────────────────────────────────────────────────
+function BrandLogo({ size = 36 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="dc-grad" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#0071e3" />
+          <stop offset="1" stopColor="#5856d6" />
+        </linearGradient>
+      </defs>
+      <rect width="36" height="36" rx="10" fill="url(#dc-grad)" />
+      {/* Globe ring */}
+      <circle cx="18" cy="18" r="9" stroke="white" strokeWidth="1.8" fill="none" opacity="0.9" />
+      {/* Vertical meridian */}
+      <ellipse cx="18" cy="18" rx="4.5" ry="9" stroke="white" strokeWidth="1.4" fill="none" opacity="0.75" />
+      {/* Horizontal equator */}
+      <line x1="9" y1="18" x2="27" y2="18" stroke="white" strokeWidth="1.4" opacity="0.75" />
+      {/* Top arc latitude */}
+      <path d="M10.5 13.5 Q18 11 25.5 13.5" stroke="white" strokeWidth="1" fill="none" opacity="0.6" />
+      {/* Bottom arc latitude */}
+      <path d="M10.5 22.5 Q18 25 25.5 22.5" stroke="white" strokeWidth="1" fill="none" opacity="0.6" />
+      {/* Connect dot */}
+      <circle cx="18" cy="18" r="2" fill="white" opacity="0.95" />
+    </svg>
+  );
+}
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -189,18 +217,19 @@ export default function DashboardPage({ isAdmin }: DashboardPageProps) {
   };
 
   const kpiData = [
-    { label: "Total Registrations", value: k.total, icon: <Users size={20} />, tone: "neutral" },
-    { label: "Unique Companies", value: k.uniqueCompanies, icon: <Building2 size={20} />, tone: "neutral" },
-    { label: "Verified", value: k.verified, icon: <CheckCircle size={20} />, tone: "good" },
-    { label: "Not Verified", value: k.notVerified, icon: <XCircle size={20} />, tone: "bad" },
-    { label: "Hotel + Flight", value: k.fh, icon: <Hotel size={20} />, tone: "warn" },
-    { label: "Only Hotel", value: k.onlyHotel, icon: <Hotel size={20} />, tone: "warn" },
-    { label: "Nothing", value: k.nothing, icon: <Globe size={20} />, tone: "neutral" },
-    { label: "Excl SL/NP/BD", value: k.totalNoExcl, icon: <Globe size={20} />, tone: "neutral" },
-    { label: "Unique Excl", value: k.uniqueNoExcl, icon: <Building2 size={20} />, tone: "neutral" },
-    { label: "Will Not Attend", value: k.willNotAttend, icon: <XCircle size={20} />, tone: "bad" },
-    { label: "Ceramic", value: k.ceramic, icon: <Globe size={20} />, tone: "neutral" },
-    { label: "Non-Ceramic", value: k.nonCeramic, icon: <Globe size={20} />, tone: "neutral" },
+    { label: "Total Registrations",                                   value: k.total,                  icon: <Users size={20} />,        tone: "neutral" },
+    { label: "Unique Companies",                                       value: k.uniqueCompanies,         icon: <Building2 size={20} />,    tone: "neutral" },
+    { label: "Verified",                                               value: k.verified,                icon: <CheckCircle size={20} />,  tone: "good"    },
+    { label: "Not Verified",                                           value: k.notVerified,             icon: <XCircle size={20} />,      tone: "bad"     },
+    { label: "Total excl. SL / NP / BD",                              value: k.totalNoExcl,             icon: <Globe size={20} />,        tone: "neutral" },
+    { label: "Unique Companies excl. SL / NP / BD",                   value: k.uniqueNoExcl,            icon: <Building2 size={20} />,    tone: "neutral" },
+    { label: "Will Not Attend",                                        value: k.willNotAttend,           icon: <XCircle size={20} />,      tone: "bad"     },
+    { label: "Without BL / Dollar Biz / Vujis",                       value: k.withoutBlDollarVujis,    icon: <ShoppingCart size={20} />, tone: "warn"    },
+    { label: "Hotel + Flight",                                         value: k.fh,                      icon: <Hotel size={20} />,        tone: "warn"    },
+    { label: "Only Hotel",                                             value: k.onlyHotel,               icon: <Hotel size={20} />,        tone: "warn"    },
+    { label: "Non-Complimentary Services",                             value: k.nonComplimentary,        icon: <Hotel size={20} />,        tone: "warn"    },
+    { label: "Ceramic & Sanitaryware (Ceramic keyword)",               value: k.ceramicAndSanitaryware,  icon: <ShoppingCart size={20} />, tone: "neutral" },
+    { label: "Non-Ceramic",                                            value: k.nonCeramic,              icon: <Globe size={20} />,        tone: "neutral" },
   ];
 
   const groups = useMemo(() => {
@@ -212,7 +241,9 @@ export default function DashboardPage({ isAdmin }: DashboardPageProps) {
     <div className="p-6 md:p-8 max-w-[1400px] mx-auto animate-fade-in">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-start justify-between mb-8 gap-4">
-        <div>
+        <div className="flex items-center gap-4">
+          <BrandLogo size={48} />
+          <div>
           <h1 className="text-3xl font-bold text-[var(--color-text-primary)] mb-1.5 tracking-tight">
             CRM Home
           </h1>
@@ -225,6 +256,7 @@ export default function DashboardPage({ isAdmin }: DashboardPageProps) {
               </span>
             )}
           </p>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           {isAdmin ? (
@@ -450,7 +482,6 @@ function PivotTable({ title, rows }: { title: string; rows: { label: string; cou
         </div>
       )}
     </div>
-
   );
 }
 
@@ -464,14 +495,39 @@ function RegistrationsTable({
   onMutate: () => void;
 }) {
   const [search, setSearch] = useState("");
+  const [product1Filter, setProduct1Filter] = useState("");
+  const [product2Filter, setProduct2Filter] = useState("");
+
   const filtered = useMemo(() => {
-    if (!search.trim()) return rows;
-    const q = search.toLowerCase();
-    return rows.filter((r) =>
-      [r.first_name, r.last_name, r.country_name, r.company_name, r.poc, r.main_import_product_1]
-        .some((v) => v?.toLowerCase().includes(q))
-    );
-  }, [rows, search]);
+    let result = rows;
+
+    // General search (name, country, company, POC)
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter((r) =>
+        [r.first_name, r.last_name, r.country_name, r.company_name, r.poc]
+          .some((v) => v?.toLowerCase().includes(q))
+      );
+    }
+
+    // Product-1 filter
+    if (product1Filter.trim()) {
+      const q1 = product1Filter.toLowerCase();
+      result = result.filter((r) =>
+        (r.main_import_product_1 ?? "").toLowerCase().includes(q1)
+      );
+    }
+
+    // Product-2 filter — AND with product-1 (same row must match both)
+    if (product2Filter.trim()) {
+      const q2 = product2Filter.toLowerCase();
+      result = result.filter((r) =>
+        (r.main_import_product_2 ?? "").toLowerCase().includes(q2)
+      );
+    }
+
+    return result;
+  }, [rows, search, product1Filter, product2Filter]);
 
   const handleDelete = async (id: number, name: string) => {
     if (!confirm(`Delete registration for ${name}?`)) return;
@@ -485,17 +541,51 @@ function RegistrationsTable({
     }
   };
 
+  const activeFilters = [search, product1Filter, product2Filter].filter(Boolean).length;
+
   return (
     <div className="flex flex-col gap-4">
-      <div>
+      {/* Search Filters */}
+      <div className="flex flex-col sm:flex-row gap-2.5 flex-wrap">
         <input
           type="search"
-          className="input max-w-sm w-full py-2 bg-[var(--color-bg-primary)] border-[var(--color-border)] focus:bg-[var(--color-surface)] shadow-sm"
+          className="input flex-1 min-w-[180px] py-2 bg-[var(--color-bg-primary)] border-[var(--color-border)] focus:bg-[var(--color-surface)] shadow-sm"
           placeholder="Search by name, country, company, POC…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <input
+          type="search"
+          className="input flex-1 min-w-[160px] py-2 bg-[var(--color-bg-primary)] border-[var(--color-border)] focus:bg-[var(--color-surface)] shadow-sm"
+          placeholder="Filter Product-1 (e.g. Ceramic)…"
+          value={product1Filter}
+          onChange={(e) => setProduct1Filter(e.target.value)}
+        />
+        <input
+          type="search"
+          className="input flex-1 min-w-[160px] py-2 bg-[var(--color-bg-primary)] border-[var(--color-border)] focus:bg-[var(--color-surface)] shadow-sm"
+          placeholder="Filter Product-2 (e.g. Hardware)…"
+          value={product2Filter}
+          onChange={(e) => setProduct2Filter(e.target.value)}
+        />
+        {activeFilters > 0 && (
+          <button
+            onClick={() => { setSearch(""); setProduct1Filter(""); setProduct2Filter(""); }}
+            className="px-3 py-2 text-[0.8rem] font-semibold rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:text-[var(--color-danger)] hover:border-[var(--color-danger)] transition-colors whitespace-nowrap"
+          >
+            ✕ Clear filters
+          </button>
+        )}
       </div>
+      {(product1Filter.trim() || product2Filter.trim()) && (
+        <p className="text-[0.78rem] font-medium text-[var(--color-accent)] -mt-1">
+          {product1Filter.trim() && product2Filter.trim()
+            ? `Showing rows where Product-1 contains "${product1Filter}" AND Product-2 contains "${product2Filter}"`
+            : product1Filter.trim()
+              ? `Showing rows where Product-1 contains "${product1Filter}"`
+              : `Showing rows where Product-2 contains "${product2Filter}"`}
+        </p>
+      )}
       <div className="border border-[var(--color-border)] rounded-xl overflow-hidden shadow-sm bg-[var(--color-surface)]">
         <div className="max-h-[500px] overflow-y-auto custom-scrollbar">
           <table className="data-table">

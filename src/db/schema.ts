@@ -18,6 +18,8 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   name: text("name"),
   role: text("role").default("staff").notNull(),
+  isActive: boolean("is_active").default(true),
+  lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -68,6 +70,9 @@ export const registrations = pgTable("registrations", {
   remarks: text("remarks"),
   blStatus: text("bl_status"),
   bbInvitationStatus: text("bb_invitation_status"),
+  dollarBusiness: text("dollar_business"),   // GAS: "dollar business" column
+  vujis: text("vujis"),                      // GAS: "vujis" column
+  isActive: boolean("is_active").default(true),
   // Google Drive mirrored URLs (set by GAS after upload)
   drivePassportFrontUrl: text("drive_passport_front_url"),
   drivePassportBackUrl: text("drive_passport_back_url"),

@@ -89,6 +89,8 @@ CREATE TABLE IF NOT EXISTS registrations (
   remarks                  TEXT,
   bl_status                TEXT,
   bb_invitation_status     TEXT,
+  dollar_business          TEXT,
+  vujis                    TEXT,
   is_active                BOOLEAN DEFAULT TRUE,
   created_at               TIMESTAMP DEFAULT NOW(),
   updated_at               TIMESTAMP DEFAULT NOW()
@@ -248,6 +250,8 @@ ALTER TABLE registrations
   ADD COLUMN IF NOT EXISTS remarks                  TEXT,
   ADD COLUMN IF NOT EXISTS bl_status                TEXT,
   ADD COLUMN IF NOT EXISTS bb_invitation_status     TEXT,
+  ADD COLUMN IF NOT EXISTS dollar_business          TEXT,
+  ADD COLUMN IF NOT EXISTS vujis                    TEXT,
   ADD COLUMN IF NOT EXISTS is_active                BOOLEAN DEFAULT TRUE;
 
 -- Travel Records

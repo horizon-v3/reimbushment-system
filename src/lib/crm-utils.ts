@@ -35,6 +35,8 @@ export type RegistrationRow = {
   remarks: string | null;
   bl_status: string | null;
   bb_invitation_status: string | null;
+  dollar_business: string | null;   // GAS: dollarBusiness alias
+  vujis: string | null;             // GAS: vujis alias
   drive_passport_front_url: string | null;
   drive_passport_back_url: string | null;
   drive_proof_url: string | null;
@@ -113,19 +115,33 @@ export type AppSettingsRow = {
   updated_at: string;
 };
 
-// ─── Pure utility helpers (ported from original crm-utils) ────────────────────
+// ─── Pure utility helpers — mirroring GAS frontend logic exactly ─────────────
 
-const COMPANY_STOPWORDS = new Set([
-  "the", "ltd", "limited", "llc", "inc", "corp", "corporation", "co", "company",
-  "pvt", "private", "fzc", "fze", "llp",
-]);
+/**
+ * Exact port of GAS textOf(): lowercase, strip non-alphanumeric to spaces, trim.
+ * Used for all comparison/normalization throughout.
+ */
+function textOf(...args: (string | null | undefined)[]): string {
+  return args.filter(Boolean).join(" ").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
 
+/**
+ * Exact port of GAS companyKey():
+ *   textOf(name)
+ *   → remove stopwords as whole words
+ *   → collapse all spaces
+ *   → remove trailing suffix (post-space-collapse)
+ */
 export function normalizeCompany(name: string | null | undefined): string {
   if (!name) return "";
-  let s = name.toLowerCase();
-  s = s.replace(/[^a-z0-9\s]/g, " ");
-  const tokens = s.split(/\s+/).filter(Boolean).filter((t) => !COMPANY_STOPWORDS.has(t));
-  return tokens.join("");
+  let s = textOf(name);
+  // Remove stopwords with word boundaries (matches GAS \b...\b regex)
+  s = s.replace(/\b(the|ltd|limited|llc|inc|corp|corporation|co|company|pvt|private|fzc|fze|llp)\b/g, " ");
+  // Collapse whitespace
+  s = s.replace(/\s+/g, "");
+  // Remove trailing suffix without boundary (catches post-collapse leftovers)
+  s = s.replace(/(ltd|limited|llc|inc|corp|corporation|co|company|pvt|private|fzc|fze|llp)$/, "");
+  return s.trim();
 }
 
 export function isYes(v: string | null | undefined): boolean {
@@ -133,55 +149,135 @@ export function isYes(v: string | null | undefined): boolean {
   return ["yes", "y", "true", "1"].includes(String(v).trim().toLowerCase());
 }
 
+/**
+ * Exact port of GAS verified():
+ *   1. If blStatus contains "not verified" → false
+ *   2. If blStatus contains "verified"     → true
+ *   3. If proofImport contains "yes"       → true
+ *   4. Otherwise                           → false
+ */
 export function isVerified(r: RegistrationRow): boolean {
-  const bl = (r.bl_status ?? "").toLowerCase();
-  if (bl.includes("verified") && !bl.includes("not verified")) return true;
-  if ((r.proof_import ?? "").toLowerCase().includes("yes")) return true;
-  return false;
+  const b = textOf(r.bl_status);
+  if (b.includes("not verified")) return false;
+  if (b.includes("verified")) return true;
+  return textOf(r.proof_import).includes("yes");
 }
 
+/**
+ * Exact port of GAS supportLabel():
+ *   Strips all whitespace from the code then matches:
+ *   fh | f/h | hf → "FH"  (Hotel + Flight)
+ *   h  | hotel    → "H"   (Only Hotel)
+ *   else          → "NONE" (Nothing / No Support)
+ */
 export type FHCategory = "FH" | "H" | "F" | "NONE";
 export function fhCategory(code: string | null | undefined): FHCategory {
-  const s = (code ?? "").replace(/\s+/g, "").toLowerCase().replace(/\//g, "");
-  if (["fh", "hf"].includes(s)) return "FH";
-  if (["h", "hotel"].includes(s)) return "H";
-  if (["f", "flight"].includes(s)) return "F";
+  const s = textOf(code).replace(/\s+/g, "");
+  if (["fh", "f/h", "hf", "h/f"].includes(s)) return "FH";
+  if (s === "h" || s === "hotel") return "H";
+  if (s === "f" || s === "flight") return "F";
   return "NONE";
 }
 
-const EXCLUDED = ["sri lanka", "nepal", "bangladesh"];
+/**
+ * Excluded countries — uses textOf normalization to match GAS:
+ *   ["sri lanka", "nepal", "bangladesh"].indexOf(textOf(countryForCount)) !== -1
+ */
+const EXCLUDED_COUNTRIES = ["sri lanka", "nepal", "bangladesh"];
 export function isExcludedCountry(c: string | null | undefined): boolean {
   if (!c) return false;
-  return EXCLUDED.includes(c.toLowerCase().trim());
+  return EXCLUDED_COUNTRIES.includes(textOf(c));
 }
 
+/**
+ * Exact port of GAS isCeramic:
+ *   category === "Ceramic Tiles" fires when textOf(products) includes "ceramic"
+ *   OR textOf(product1, product2) directly includes "ceramic"
+ *
+ * IMPORTANT: GAS classifyCategory separates "Ceramic Tiles" and "Sanitaryware"
+ * as different categories. isCeramic only checks for "ceramic" — NOT "sanitary".
+ * The KPI label is "Ceramic & Sanitaryware" (renamed by user) but the COUNT
+ * mirrors GAS exactly: only rows containing the word "ceramic" in their products.
+ * Expected result: 399 (matches GAS group message: "Total Ceramic :- 399")
+ */
 export function hasCeramic(r: RegistrationRow): boolean {
-  const text = `${r.main_import_product_1 ?? ""} ${r.main_import_product_2 ?? ""} ${r.products_services ?? ""}`.toLowerCase();
-  return text.includes("ceramic");
+  const t = textOf(r.main_import_product_1, r.main_import_product_2, r.products_services);
+  return t.includes("ceramic");
 }
 
+/**
+ * computeKpis — mirrors GAS renderKpis() exactly:
+ *
+ *   total           = registrations.length                  (all rows)
+ *   uniqueCompanies = Set(companyKey).size                  (deduped)
+ *   verified        = rows.filter(verified).length          (ALL rows, NOT unique)
+ *   notVerified     = total - verified                      (ALL rows)
+ *   fh              = rows where support === "Hotel + Flight" (ALL rows)
+ *   onlyHotel       = rows where support === "Only Hotel"    (ALL rows)
+ *   nothing         = rows where support === "Nothing"       (ALL rows)
+ *   nonComplimentary= fh + onlyHotel                        (Hotel + Flight ∪ Only Hotel)
+ *   ceramic         = rows where isCeramic ("ceramic" in products)  (ALL rows)
+ *   nonCeramic      = total - ceramic                               (ALL rows)
+ *   totalNoExcl     = rows excl SL/NP/BD
+ *   uniqueNoExcl    = unique companies excl SL/NP/BD
+ *   willNotAttend   = rows where status includes "not attend" or "cancel"
+ */
 export function computeKpis(rows: RegistrationRow[]) {
   const total = rows.length;
-  const uniqueCompanies = new Set(rows.map((r) => normalizeCompany(r.company_name)).filter(Boolean)).size;
-  const verified = rows.filter(isVerified).length;
+
+  // Unique companies — companyKey dedup (matching GAS Set(companyKey))
+  const uniqueCompanies = new Set(
+    rows.map((r) => normalizeCompany(r.company_name)).filter(Boolean)
+  ).size;
+
+  // Verified / Not Verified — PER ROW (matching GAS: registrations.filter(r => r.verified).length)
+  const verified    = rows.filter(isVerified).length;
   const notVerified = total - verified;
-  const fh = rows.filter((r) => fhCategory(r.flight_hotel_code) === "FH").length;
+
+  // Flight+Hotel support — PER ROW
+  const fh        = rows.filter((r) => fhCategory(r.flight_hotel_code) === "FH").length;
   const onlyHotel = rows.filter((r) => fhCategory(r.flight_hotel_code) === "H").length;
-  const nothing = rows.filter((r) => fhCategory(r.flight_hotel_code) === "NONE").length;
-  const filtered = rows.filter((r) => !isExcludedCountry(r.country_name ?? r.passport_country));
-  const totalNoExcl = filtered.length;
-  const uniqueNoExcl = new Set(filtered.map((r) => normalizeCompany(r.company_name)).filter(Boolean)).size;
+  const nothing   = rows.filter((r) => fhCategory(r.flight_hotel_code) === "NONE").length;
+  // Non-Complimentary Services = Only Hotel + (Hotel + Flight)
+  const nonComplimentary = fh + onlyHotel;
+
+  // Excl SL/NP/BD
+  const filteredRows  = rows.filter((r) => !isExcludedCountry(r.country_name ?? r.passport_country));
+  const totalNoExcl   = filteredRows.length;
+  const uniqueNoExcl  = new Set(
+    filteredRows.map((r) => normalizeCompany(r.company_name)).filter(Boolean)
+  ).size;
+
+  // Will Not Attend — textOf normalization matching GAS
   const willNotAttend = rows.filter((r) => {
-    const s = (r.status ?? "").toLowerCase();
+    const s = textOf(r.status);
     return s.includes("not attend") || s.includes("cancel");
   }).length;
-  const ceramic = rows.filter(hasCeramic).length;
-  const nonCeramic = total - ceramic;
+
+  // Ceramic & Sanitaryware — PER ROW (matching GAS: registrations.filter(r => r.isCeramic).length)
+  const ceramicAndSanitaryware = rows.filter(hasCeramic).length;
+  const ceramic    = ceramicAndSanitaryware; // alias
+  const nonCeramic = total - ceramicAndSanitaryware;
+
+  // Without BL / Dollar biz / Vujis
+  // GAS message line: "With out BL / Dollar biz / Vujis : - 129"
+  // = rows where proof_import is blank/no AND dollar_business is blank AND vujis is blank
+  const withoutBlDollarVujis = rows.filter((r) => {
+    const noProof  = !textOf(r.proof_import) || textOf(r.proof_import) === "no";
+    const noDollar = !textOf(r.dollar_business);
+    const noVujis  = !textOf(r.vujis);
+    return noProof && noDollar && noVujis;
+  }).length;
+
   return {
-    total, uniqueCompanies, verified, notVerified, fh, onlyHotel, nothing,
-    totalNoExcl, uniqueNoExcl, willNotAttend, ceramic, nonCeramic,
+    total, uniqueCompanies, verified, notVerified,
+    fh, onlyHotel, nothing, nonComplimentary,
+    totalNoExcl, uniqueNoExcl, willNotAttend,
+    ceramic, ceramicAndSanitaryware, nonCeramic,
+    withoutBlDollarVujis,
   };
 }
+
 
 export function pivotCount<T>(rows: T[], keyFn: (r: T) => string | null | undefined): { label: string; count: number }[] {
   const map = new Map<string, number>();
@@ -239,6 +335,7 @@ export function parseAnyDate(dStr: string | null | undefined): Date | null {
 }
 
 export function generateGroupMessage(rows: RegistrationRow[], date: Date): string {
+  // Today's registrations (by timestamp)
   const today = rows.filter((r) => {
     const t = parseAnyDate(r.timestamp_raw ?? r.created_at);
     if (!t) return false;
@@ -246,9 +343,25 @@ export function generateGroupMessage(rows: RegistrationRow[], date: Date): strin
   });
   const k = computeKpis(rows);
   const byCountry = pivotCount(today, (r) => r.country_name ?? r.passport_country);
-  const head = `${fmtDateDDMMYYYY(date)} Today's Reg - ${today.length}`;
-  const countryLine = byCountry.map((c) => `${c.label} :- ${c.count}`).join(" , ");
-  return `${head}\n\n${countryLine}\n\n> Overall count of delegates Total :- ${k.total}\nUnique number companies : - ${k.uniqueCompanies}\nTotal Ceramic : - ${k.ceramic}\nTotal Non Ceramic : - ${k.nonCeramic}\n`;
+  const dateStr = fmtDateDDMMYYYY(date);
+  const countryLine = byCountry.map((c) => `${c.label} :- ${c.count}`).join(" , ") || "No registrations today.";
+
+  // Exactly mirrors the GAS group message format:
+  return [
+    `*${dateStr} Today's Reg - ${String(today.length).padStart(2, "0")}*`,
+    "",
+    countryLine,
+    "",
+    `> *Overall count of delegates Total :- ${k.total}*`,
+    "",
+    `Total count of delegates Without Sri-Lanka, Nepal & Bangladesh :-${k.totalNoExcl}`,
+    `Unique number companies : - ${k.uniqueCompanies}`,
+    `Will Not Attend :-  ${k.willNotAttend}`,
+    `Unique number companies Without Sri-Lanka, Nepal & Bangladesh :- ${k.uniqueNoExcl}`,
+    `With out BL / Dollar biz / Vujis : - ${k.withoutBlDollarVujis}`,
+    `Total Ceramic : - ${k.ceramic}`,
+    `Total Non Ceramic : - ${k.nonCeramic}`,
+  ].join("\n");
 }
 
 export function generateTicketReport(records: TravelRow[]): string {

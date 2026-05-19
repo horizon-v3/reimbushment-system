@@ -577,7 +577,9 @@ function handleBackupRegistration(body) {
     "Flight & Hotel": record.flight_hotel_code,
     "Remarks": record.remarks,
     "B/L Status": record.bl_status,
-    "BB Invitation letter status": record.bb_invitation_status
+    "BB Invitation letter status": record.bb_invitation_status,
+    "Dollar Business": record.dollar_business,
+    "Vujis": record.vujis
   };
 
   var expectedHeaders = Object.keys(recordMap);
