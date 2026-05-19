@@ -42,11 +42,13 @@ export async function POST(request: Request) {
     results.gas = { ok: false, message: String(e) };
   }
 
+  const sheetName = body.registration_sheet_name as string | undefined || "Form Responses 1";
+
   // ── 2. Verify Sheet (only if GAS is alive) ─────────────────────────────────
   if (results.gas.ok && sheetId) {
     try {
       const sheetRes = await callGasDirect(
-        { action: "getRows", sheetId, sheetName: "Travel Desk Records" },
+        { action: "getRows", sheetId, sheetName },
         gasUrl
       ) as { ok: boolean; error?: string; total?: number };
       results.sheet = sheetRes.ok

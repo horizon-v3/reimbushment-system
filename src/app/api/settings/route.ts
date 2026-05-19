@@ -31,8 +31,8 @@ export async function POST(request: Request) {
       .values({
         id: 1,
         registrationSheetId: body.registration_sheet_id ?? null,
-        registrationSheetName: body.registration_sheet_name ?? "Form Responses 1",
-        travelSheetName: body.travel_sheet_name ?? "Travel Desk Records",
+        registrationSheetName: body.registration_sheet_name || "Form Responses 1",
+        travelSheetName: body.travel_sheet_name || "Travel Desk Records",
         driveFolderId: body.drive_folder_id ?? null,
         gasWebAppUrl: body.gas_web_app_url ?? null,
         updatedAt: new Date(),
@@ -41,8 +41,8 @@ export async function POST(request: Request) {
         target: appSettings.id,
         set: {
           registrationSheetId: body.registration_sheet_id ?? null,
-          registrationSheetName: body.registration_sheet_name ?? "Form Responses 1",
-          travelSheetName: body.travel_sheet_name ?? "Travel Desk Records",
+          registrationSheetName: body.registration_sheet_name || "Form Responses 1",
+          travelSheetName: body.travel_sheet_name || "Travel Desk Records",
           driveFolderId: body.drive_folder_id ?? null,
           gasWebAppUrl: body.gas_web_app_url ?? null,
           updatedAt: new Date(),

@@ -226,7 +226,7 @@ export async function DELETE(request: Request) {
       if (gasUrl && sheetId && srNo) {
         deleteSheetRecord(srNo, {
           sheetId,
-          sheetName: settings?.travelSheetName ?? "Travel Desk Records",
+          sheetName: settings?.travelSheetName || "Travel Desk Records",
           gasUrl,
         }).catch(console.error);
       }
@@ -277,7 +277,7 @@ async function syncToSheet(
 
   const res = await backupTravelRecordToSheet(payload, {
     sheetId,
-    sheetName: settings?.travelSheetName ?? "Travel Desk Records",
+    sheetName: settings?.travelSheetName || "Travel Desk Records",
     gasUrl,
   });
 

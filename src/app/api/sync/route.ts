@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     const gasUrl = new URL(settings.gasWebAppUrl);
     gasUrl.searchParams.set("action", "getRows");
     gasUrl.searchParams.set("sheetId", settings.registrationSheetId);
-    gasUrl.searchParams.set("sheetName", settings.registrationSheetName ?? "Form Responses 1");
+    gasUrl.searchParams.set("sheetName", settings.registrationSheetName || "Form Responses 1");
     gasUrl.searchParams.set("mode", mode);
 
     const gasRes = await fetch(gasUrl.toString(), {
