@@ -231,7 +231,7 @@ export default function OperationLogPage() {
                       <tr key={log.id} className={`${i % 2 === 0 ? "" : "bg-[var(--color-bg-primary)]/40"} ${log.status === "blocked" ? "opacity-60" : ""}`}>
                         <td className="font-mono text-xs text-[var(--color-text-tertiary)]">{log.id}</td>
                         <td className="whitespace-nowrap text-[0.72rem] text-[var(--color-text-secondary)]">{fmt(log.created_at)}</td>
-                        <td className="font-semibold text-[var(--color-text-primary)]">{log.user_name ?? `UID:${log.user_id}` ?? "—"}</td>
+                        <td className="font-semibold text-[var(--color-text-primary)]">{log.user_name ?? (log.user_id != null ? `UID:${log.user_id}` : "—")}</td>
                         <td>
                           <span className={`badge text-[0.65rem] px-2 ${
                             log.user_role === "admin" ? "badge-danger" :
