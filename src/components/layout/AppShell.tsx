@@ -4,18 +4,20 @@ import { useState, useEffect } from "react";
 import type { Session } from "next-auth";
 import {
   Globe, Plane, Settings, LogOut, ChevronRight,
-  LayoutDashboard, Menu, X, MessageSquare, BarChart2
+  LayoutDashboard, Menu, X, MessageSquare, BarChart2, Users, ShieldAlert
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const NAV_ITEMS = [
-  { href: "/",          icon: <LayoutDashboard size={17} />, label: "CRM Home",   desc: "KPIs & Analytics", roles: ["admin"] },
-  { href: "/analytics", icon: <BarChart2 size={17} />,       label: "Analytics",  desc: "Sector & DB/Vujis", roles: ["admin"] },
-  { href: "/travel",    icon: <Plane size={17} />,           label: "Travel Desk", desc: "Flights, Hotels, Visas", roles: ["admin", "supervisor", "user"] },
-  { href: "/chat",      icon: <MessageSquare size={17} />,   label: "Team Chat",   desc: "Enterprise Messaging", roles: ["admin", "supervisor", "user"] },
-  { href: "/settings",  icon: <Settings size={17} />,        label: "Settings",    desc: "Integration Config", roles: ["admin"] },
+  { href: "/",              icon: <LayoutDashboard size={17} />, label: "CRM Home",            desc: "KPIs & Analytics",       roles: ["admin"] },
+  { href: "/analytics",     icon: <BarChart2 size={17} />,       label: "Analytics",           desc: "Sector & DB/Vujis",      roles: ["admin"] },
+  { href: "/delegates",     icon: <Users size={17} />,           label: "Registered Delegates",desc: "View delegate list",     roles: ["admin", "supervisor", "user"] },
+  { href: "/travel",        icon: <Plane size={17} />,           label: "Travel Desk",         desc: "Flights, Hotels, Visas", roles: ["admin", "supervisor", "user"] },
+  { href: "/chat",          icon: <MessageSquare size={17} />,   label: "Team Chat",           desc: "Enterprise Messaging",   roles: ["admin", "supervisor", "user"] },
+  { href: "/operation-log", icon: <ShieldAlert size={17} />,     label: "Operation Log",       desc: "Audit & Permissions",    roles: ["admin"] },
+  { href: "/settings",      icon: <Settings size={17} />,        label: "Settings",            desc: "Integration Config",     roles: ["admin"] },
 ];
 
 interface Props {

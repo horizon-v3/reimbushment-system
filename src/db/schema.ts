@@ -184,12 +184,34 @@ export const appSettings = pgTable("app_settings", {
 // ─── Audit Log ────────────────────────────────────────────────────────────────
 export const auditLog = pgTable("audit_log", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+  userId: integer("user_id"),
+  userName: text("user_name"),
+  userRole: text("user_role"),
   action: text("action").notNull(),
   entityType: text("entity_type"),
   entityId: integer("entity_id"),
+  status: text("status").default("success"),  // success | failed | blocked | pending
+  ipAddress: text("ip_address"),
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ─── Operation Permissions ────────────────────────────────────────────────────
+// Supervisor overwrite requests must be approved by admin (type "confirm")
+export const operationPermissions = pgTable("operation_permissions", {
+  id: serial("id").primaryKey(),
+  requestedBy: integer("requested_by"),       // supervisor's user id
+  requestedByName: text("requested_by_name"),
+  operation: text("operation").notNull(),      // e.g. "overwrite_registration"
+  description: text("description"),
+  status: text("status").default("pending"),   // pending | approved | denied | revoked
+  approvedBy: integer("approved_by"),          // admin who approved
+  approvedByName: text("approved_by_name"),
+  confirmedAt: timestamp("confirmed_at"),
+  expiresAt: timestamp("expires_at"),          // optional TTL
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 // ─── Chat Messages ────────────────────────────────────────────────────────────

@@ -9,7 +9,16 @@ import {
   deleteSheetRecord,
   deleteDriveFolder,
 } from "@/lib/gas-client";
+import { writeAuditLog } from "@/lib/audit";
 import type { Session } from "next-auth";
+
+function getIP(request: Request): string {
+  return (
+    request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
+    request.headers.get("x-real-ip") ??
+    "unknown"
+  );
+}
 
 // ─── Permission Helpers ────────────────────────────────────────────────────────
 function isAllowedToEdit(session: Session | null): boolean {
@@ -185,9 +194,23 @@ export async function DELETE(request: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const role = (session.user as { role?: string }).role ?? "staff";
-  if (role !== "admin")
-    return NextResponse.json({ error: "Forbidden: admin only" }, { status: 403 });
+  const role     = (session.user as { role?: string }).role ?? "staff";
+  const userId   = getUserId(session);
+  const userName = session.user?.name ?? session.user?.email ?? "unknown";
+  const ip       = getIP(request);
+
+  // ── BLOCK: only admin can delete ─────────────────────────────────────────
+  if (role !== "admin") {
+    await writeAuditLog({
+      userId, userName, userRole: role,
+      action: "delete_travel_record_blocked",
+      entityType: "travel_record",
+      status: "blocked",
+      ipAddress: ip,
+      metadata: { reason: "Insufficient role — admin required" },
+    });
+    return NextResponse.json({ error: "Forbidden: only admin can delete records" }, { status: 403 });
+  }
 
   const url = new URL(request.url);
   const id  = parseInt(url.searchParams.get("id") ?? "0");

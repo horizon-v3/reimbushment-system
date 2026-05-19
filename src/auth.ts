@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { compare } from "bcryptjs";
+import { writeAuditLog } from "@/lib/audit";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   secret: process.env.AUTH_SECRET || "delegate_connect_new_secret_to_invalidate_old_cookies_123",
@@ -20,13 +21,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
+        const email = (credentials?.email as string | undefined)?.toLowerCase().trim();
+        const password = credentials?.password as string | undefined;
+
+        if (!email || !password) return null;
+
         try {
-          const email = (credentials?.email as string | undefined)?.toLowerCase().trim();
-          const password = credentials?.password as string | undefined;
-
-          if (!email || !password) return null;
-
           if (email === "admin" && password === "manthan18") {
+            await writeAuditLog({
+              userId: 1, userName: "Administrator", userRole: "admin",
+              action: "login", status: "success",
+              metadata: { email: "admin@delegateconnect.com" },
+            });
             return {
               id: "admin",
               email: "admin@delegateconnect.com",
@@ -41,16 +47,36 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             .where(eq(users.email, email))
             .limit(1);
 
-          if (!user?.passwordHash) return null;
+          if (!user?.passwordHash) {
+            await writeAuditLog({
+              userId: null, userName: email, userRole: "unknown",
+              action: "login_failed", status: "failed",
+              metadata: { reason: "User not found", email },
+            });
+            return null;
+          }
 
           const valid = await compare(password, user.passwordHash);
-          if (!valid) return null;
+          if (!valid) {
+            await writeAuditLog({
+              userId: user.id, userName: user.name ?? user.email, userRole: user.role,
+              action: "login_failed", status: "failed",
+              metadata: { reason: "Invalid password" },
+            });
+            return null;
+          }
+
+          await writeAuditLog({
+            userId: user.id, userName: user.name ?? user.email, userRole: user.role,
+            action: "login", status: "success",
+            metadata: { email: user.email },
+          });
 
           return {
             id: String(user.id),
             email: user.email,
             name: user.name ?? user.email,
-            role: user.role ?? "user", // default to user
+            role: user.role ?? "user",
           };
         } catch (err) {
           console.error("[auth] authorize error:", err);
