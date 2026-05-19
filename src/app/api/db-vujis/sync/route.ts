@@ -13,7 +13,7 @@ const HEADER_MAP: Record<string, string> = {
   vujis:                             "vujis",
   import_value_in_usd:               "import_value_vujis",   // first occurrence
   dollar_business:                   "dollar_business",
-  import_value_in_usd_1:             "import_value_dollar",  // second occurrence (deduplicated by GAS)
+  import_value_in_usd_1:             "import_value_dollar",  // second duplicate
   both:                              "both_db_vujis",
   importing_from_india:              "importing_from_india",
   importing_from_other_country:      "importing_from_other_country",
@@ -26,19 +26,25 @@ const HEADER_MAP: Record<string, string> = {
   comment:                           "comment",
 };
 
+/** Normalize a sheet header to a snake_case key */
 function normalizeHeader(raw: string): string {
-  return raw
-    .trim()
-    .toLowerCase()
+  return raw.trim().toLowerCase()
     .replace(/[^\w]+/g, "_")
     .replace(/_+/g, "_")
     .replace(/^_|_$/g, "");
 }
 
-function str(v: unknown): string | null {
-  if (v == null) return null;
+/** Coerce any value to a DB-safe string or null — never undefined */
+function dbStr(v: unknown): string | null {
+  if (v === undefined || v === null) return null;
   const s = String(v).trim();
   return s === "" ? null : s;
+}
+
+/** Coerce to a positive integer or null */
+function dbInt(v: unknown): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
 }
 
 // ─── POST /api/db-vujis/sync ──────────────────────────────────────────────────
@@ -52,7 +58,7 @@ export async function POST() {
   }
 
   try {
-    // ── 1. Auto-migrate: ensure table and column exist ──────────────────────
+    // ── 1. Auto-migrate: ensure table + column exist ────────────────────────
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS db_vujis_records (
         id                           SERIAL PRIMARY KEY,
@@ -83,113 +89,151 @@ export async function POST() {
       ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS db_vujis_sheet_name TEXT DEFAULT 'DB & vujis'
     `);
 
-    // ── 2. Fetch settings using raw SQL (avoids schema-column mismatch) ─────
-    const settingsRows = await db.execute(sql`
+    // ── 2. Load settings via raw SQL ────────────────────────────────────────
+    const settingsResult = Array.from(await db.execute(sql`
       SELECT
         gas_web_app_url,
         registration_sheet_id,
         COALESCE(db_vujis_sheet_name, 'DB & vujis') AS db_vujis_sheet_name
-      FROM app_settings
-      WHERE id = 1
-      LIMIT 1
-    `);
+      FROM app_settings WHERE id = 1 LIMIT 1
+    `));
 
-    const settings = (Array.from(settingsRows)[0] ?? null) as Record<string, string> | null;
+    const s = (settingsResult[0] ?? null) as Record<string, unknown> | null;
+    const gasUrl      = dbStr(s?.gas_web_app_url);
+    const sheetId     = dbStr(s?.registration_sheet_id);
+    const sheetName   = dbStr(s?.db_vujis_sheet_name) || "DB & vujis";
 
-    if (!settings?.gas_web_app_url) {
-      return NextResponse.json({ error: "GAS Web App URL not configured in Settings" }, { status: 400 });
-    }
-    if (!settings?.registration_sheet_id) {
-      return NextResponse.json({ error: "Sheet ID not configured in Settings" }, { status: 400 });
-    }
+    if (!gasUrl)    return NextResponse.json({ error: "GAS Web App URL not configured in Settings" }, { status: 400 });
+    if (!sheetId)   return NextResponse.json({ error: "Sheet ID not configured in Settings" }, { status: 400 });
 
-    const sheetName = settings.db_vujis_sheet_name || "DB & vujis";
-
-    // ── 3. Fetch rows from Google Sheet via GAS ────────────────────────────
-    const gasUrl = new URL(settings.gas_web_app_url);
-    gasUrl.searchParams.set("action",    "getRows");
-    gasUrl.searchParams.set("sheetId",   settings.registration_sheet_id);
-    gasUrl.searchParams.set("sheetName", sheetName);
+    // ── 3. Fetch rows from Google Sheet ─────────────────────────────────────
+    const fetchUrl = new URL(gasUrl);
+    fetchUrl.searchParams.set("action",    "getRows");
+    fetchUrl.searchParams.set("sheetId",   sheetId);
+    fetchUrl.searchParams.set("sheetName", sheetName);
 
     let gasData: { ok: boolean; rows?: Record<string, unknown>[]; error?: string };
     try {
-      const gasRes = await fetch(gasUrl.toString(), {
+      const res = await fetch(fetchUrl.toString(), {
         redirect: "follow",
         headers:  { "Cache-Control": "no-cache" },
         signal:   AbortSignal.timeout(30_000),
       });
-      if (!gasRes.ok) {
-        throw new Error(`GAS returned HTTP ${gasRes.status}`);
-      }
-      gasData = await gasRes.json();
-    } catch (fetchErr) {
-      const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+      if (!res.ok) throw new Error(`HTTP ${res.status} from GAS`);
+      gasData = await res.json();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
       return NextResponse.json({ error: `Failed to reach Google Sheet: ${msg}` }, { status: 502 });
     }
 
     if (!gasData.ok) {
-      return NextResponse.json({ error: gasData.error ?? "Unknown GAS error" }, { status: 502 });
+      return NextResponse.json({ error: gasData.error ?? "GAS returned ok:false" }, { status: 502 });
     }
 
     const rawRows = gasData.rows ?? [];
     if (rawRows.length === 0) {
-      return NextResponse.json({ ok: true, synced: 0, message: `No rows found in sheet "${sheetName}"` });
+      return NextResponse.json({ ok: true, synced: 0, message: `No rows in sheet "${sheetName}"` });
     }
 
-    // ── 4. Map sheet columns → DB columns ──────────────────────────────────
-    const records: Record<string, unknown>[] = [];
-    for (const r of rawRows) {
-      const mapped: Record<string, unknown> = {};
-      for (const [rawKey, value] of Object.entries(r)) {
-        const norm      = normalizeHeader(rawKey);
-        const dbCol     = HEADER_MAP[norm];
-        if (dbCol && !(dbCol in mapped)) {        // first-wins for duplicates
-          mapped[dbCol] = str(value);
+    // ── 4. Map + validate rows ──────────────────────────────────────────────
+    type DbRec = {
+      sr_no: number;
+      company_name: string | null;
+      country_name: string | null;
+      region: string | null;
+      proof_of_import_y: string | null;
+      proof_of_import_n: string | null;
+      vujis: string | null;
+      import_value_vujis: string | null;
+      dollar_business: string | null;
+      import_value_dollar: string | null;
+      both_db_vujis: string | null;
+      importing_from_india: string | null;
+      importing_from_other_country: string | null;
+      main_import_product_1: string | null;
+      main_import_product_2: string | null;
+      poc: string | null;
+      reason: string | null;
+      comment: string | null;
+    };
+
+    const records: DbRec[] = [];
+
+    for (const row of rawRows) {
+      // Map raw headers → db columns (first-wins for duplicates)
+      const flat: Record<string, unknown> = {};
+      for (const [rawKey, value] of Object.entries(row)) {
+        const norm  = normalizeHeader(rawKey);
+        const dbCol = HEADER_MAP[norm];
+        if (dbCol && !(dbCol in flat)) {
+          flat[dbCol] = value;
         }
       }
-      const srNo = Number(mapped.sr_no);
-      if (!isNaN(srNo) && srNo > 0) {
-        mapped.sr_no = srNo;
-        records.push(mapped);
-      }
+
+      const srNo = dbInt(flat.sr_no);
+      if (!srNo) continue;   // skip rows without a valid Sr No
+
+      records.push({
+        sr_no:                        srNo,
+        company_name:                 dbStr(flat.company_name),
+        country_name:                 dbStr(flat.country_name),
+        region:                       dbStr(flat.region),
+        proof_of_import_y:            dbStr(flat.proof_of_import_y),
+        proof_of_import_n:            dbStr(flat.proof_of_import_n),
+        vujis:                        dbStr(flat.vujis),
+        import_value_vujis:           dbStr(flat.import_value_vujis),
+        dollar_business:              dbStr(flat.dollar_business),
+        import_value_dollar:          dbStr(flat.import_value_dollar),
+        both_db_vujis:                dbStr(flat.both_db_vujis),
+        importing_from_india:         dbStr(flat.importing_from_india),
+        importing_from_other_country: dbStr(flat.importing_from_other_country),
+        main_import_product_1:        dbStr(flat.main_import_product_1),
+        main_import_product_2:        dbStr(flat.main_import_product_2),
+        poc:                          dbStr(flat.poc),
+        reason:                       dbStr(flat.reason),
+        comment:                      dbStr(flat.comment),
+      });
     }
 
-    // ── 5. Upsert in batches of 100 ────────────────────────────────────────
-    let totalUpserted = 0;
-    const BATCH = 100;
+    if (records.length === 0) {
+      return NextResponse.json({ ok: true, synced: 0, message: "No valid rows (missing Sr No)" });
+    }
 
-    for (let i = 0; i < records.length; i += BATCH) {
-      const batch = records.slice(i, i + BATCH);
-
-      for (const rec of batch) {
+    // ── 5. Upsert each record individually with explicit typed params ────────
+    let synced = 0;
+    for (const r of records) {
+      try {
         await db.execute(sql`
           INSERT INTO db_vujis_records (
             sr_no, company_name, country_name, region,
             proof_of_import_y, proof_of_import_n,
-            vujis, import_value_vujis, dollar_business, import_value_dollar,
-            both_db_vujis, importing_from_india, importing_from_other_country,
+            vujis, import_value_vujis,
+            dollar_business, import_value_dollar,
+            both_db_vujis,
+            importing_from_india, importing_from_other_country,
             main_import_product_1, main_import_product_2,
-            poc, reason, comment, updated_at
+            poc, reason, comment,
+            created_at, updated_at
           ) VALUES (
-            ${rec.sr_no as number},
-            ${rec.company_name as string},
-            ${rec.country_name as string},
-            ${rec.region as string},
-            ${rec.proof_of_import_y as string},
-            ${rec.proof_of_import_n as string},
-            ${rec.vujis as string},
-            ${rec.import_value_vujis as string},
-            ${rec.dollar_business as string},
-            ${rec.import_value_dollar as string},
-            ${rec.both_db_vujis as string},
-            ${rec.importing_from_india as string},
-            ${rec.importing_from_other_country as string},
-            ${rec.main_import_product_1 as string},
-            ${rec.main_import_product_2 as string},
-            ${rec.poc as string},
-            ${rec.reason as string},
-            ${rec.comment as string},
-            NOW()
+            ${r.sr_no},
+            ${r.company_name},
+            ${r.country_name},
+            ${r.region},
+            ${r.proof_of_import_y},
+            ${r.proof_of_import_n},
+            ${r.vujis},
+            ${r.import_value_vujis},
+            ${r.dollar_business},
+            ${r.import_value_dollar},
+            ${r.both_db_vujis},
+            ${r.importing_from_india},
+            ${r.importing_from_other_country},
+            ${r.main_import_product_1},
+            ${r.main_import_product_2},
+            ${r.poc},
+            ${r.reason},
+            ${r.comment},
+            NOW(), NOW()
           )
           ON CONFLICT (sr_no) DO UPDATE SET
             company_name                 = EXCLUDED.company_name,
@@ -211,7 +255,10 @@ export async function POST() {
             comment                      = EXCLUDED.comment,
             updated_at                   = NOW()
         `);
-        totalUpserted++;
+        synced++;
+      } catch (rowErr) {
+        // Log the bad row but continue syncing the rest
+        console.error(`[db-vujis/sync] Row sr_no=${r.sr_no} failed:`, rowErr);
       }
     }
 
@@ -221,17 +268,20 @@ export async function POST() {
         INSERT INTO audit_log (user_id, action, entity_type, metadata, created_at)
         VALUES (
           ${session.user?.id === "admin" ? 1 : parseInt(session.user?.id ?? "0")},
-          'sync_db_vujis',
-          'db_vujis',
-          ${JSON.stringify({ count: totalUpserted, sheet: sheetName })}::jsonb,
+          ${"sync_db_vujis"},
+          ${"db_vujis"},
+          ${JSON.stringify({ synced, total: records.length, sheet: sheetName })}::jsonb,
           NOW()
         )
       `);
-    } catch {
-      // audit failure is non-fatal
-    }
+    } catch { /* non-fatal */ }
 
-    return NextResponse.json({ ok: true, synced: totalUpserted, sheet: sheetName });
+    return NextResponse.json({
+      ok: true,
+      synced,
+      total: records.length,
+      sheet: sheetName,
+    });
 
   } catch (err: unknown) {
     console.error("[POST /api/db-vujis/sync]", err);
