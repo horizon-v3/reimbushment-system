@@ -13,6 +13,13 @@ export async function POST(request: Request) {
   const role = (session.user as { role?: string }).role ?? "staff";
   if (role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+  // ── Auto-migrate: add will_not_attend column if not present ─────────────
+  try {
+    await db.execute(sql`
+      ALTER TABLE registrations ADD COLUMN IF NOT EXISTS will_not_attend TEXT
+    `);
+  } catch { /* column may already exist */ }
+
   // Load settings
   const [settings] = await db.select().from(appSettings).where(eq(appSettings.id, 1)).limit(1);
   if (!settings?.gasWebAppUrl) {
@@ -210,6 +217,7 @@ function mapSheetRow(r: Record<string, unknown>) {
     bbInvitationStatus:    s(["BB Invitation letter status", "bb_invitation_status"]),
     dollarBusiness:        s(["Dollar Business", "dollar_business", "Dollar biz"]),
     vujis:                 s(["Vujis", "vujis", "VUJIS"]),
+    willNotAttend:         s(["Will Not Attend", "will_not_attend", "WILL NOT ATTEND"]),
     drivePassportFrontUrl: s(["drive_passport_front_url"]),
     drivePassportBackUrl:  s(["drive_passport_back_url"]),
     driveProofUrl:         s(["drive_proof_url"]),

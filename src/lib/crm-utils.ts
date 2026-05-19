@@ -37,6 +37,7 @@ export type RegistrationRow = {
   bb_invitation_status: string | null;
   dollar_business: string | null;   // GAS: dollarBusiness alias
   vujis: string | null;             // GAS: vujis alias
+  will_not_attend: string | null;   // dedicated column — blank = attend, any value = not attending
   drive_passport_front_url: string | null;
   drive_passport_back_url: string | null;
   drive_proof_url: string | null;
@@ -263,8 +264,12 @@ export function computeKpis(rows: RegistrationRow[]) {
     filteredRows.map((r) => normalizeCompany(r.company_name)).filter(Boolean)
   ).size;
 
-  // Will Not Attend — textOf normalization matching GAS
+  // Will Not Attend — check dedicated column FIRST (any non-blank value = will not attend)
+  // Fallback to status text for backward compatibility with older synced data
   const willNotAttend = rows.filter((r) => {
+    // Priority 1: dedicated "Will Not Attend" column — any non-blank value
+    if (r.will_not_attend != null && textOf(r.will_not_attend).length > 0) return true;
+    // Priority 2: status column fallback (old data before the column was added)
     const s = textOf(r.status);
     return s.includes("not attend") || s.includes("cancel");
   }).length;

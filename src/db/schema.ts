@@ -72,6 +72,7 @@ export const registrations = pgTable("registrations", {
   bbInvitationStatus: text("bb_invitation_status"),
   dollarBusiness: text("dollar_business"),   // GAS: "dollar business" column
   vujis: text("vujis"),                      // GAS: "vujis" column
+  willNotAttend: text("will_not_attend"),    // blank = attend, any value = will not attend
   isActive: boolean("is_active").default(true),
   // Google Drive mirrored URLs (set by GAS after upload)
   drivePassportFrontUrl: text("drive_passport_front_url"),

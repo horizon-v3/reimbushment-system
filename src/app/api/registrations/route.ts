@@ -102,6 +102,8 @@ const HEADER_MAP: Record<string, string> = {
   bl_status:                                                       "bl_status",
   bb_invitation_letter_status:                                     "bb_invitation_status",
   bb_invitation_status:                                            "bb_invitation_status",
+  // "Will Not Attend" column — any non-blank value = will not attend, blank = attend
+  will_not_attend:                                                 "will_not_attend",
   // Drive URLs populated by GAS
   drive_passport_front_url:                                        "drive_passport_front_url",
   drive_passport_back_url:                                         "drive_passport_back_url",
@@ -460,6 +462,7 @@ function mapRegistration(r: Record<string, unknown>) {
     remarks:               s("remarks"),
     blStatus:              s("bl_status"),
     bbInvitationStatus:    s("bb_invitation_status"),
+    willNotAttend:         s("will_not_attend"),
     drivePassportFrontUrl: s("drive_passport_front_url"),
     drivePassportBackUrl:  s("drive_passport_back_url"),
     driveProofUrl:         s("drive_proof_url"),
